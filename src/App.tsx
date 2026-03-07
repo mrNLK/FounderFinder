@@ -52,7 +52,13 @@ function LoginPage() {
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: window.location.origin,
+          },
+        });
         if (error) throw error;
         setMagicLinkSent(true);
       } else {
@@ -77,7 +83,12 @@ function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({ email });
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: window.location.origin,
+        },
+      });
       if (error) throw error;
       setMagicLinkSent(true);
     } catch (err: unknown) {
