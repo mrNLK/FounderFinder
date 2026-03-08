@@ -459,14 +459,20 @@ export interface AiFundWorkspace {
 
 export interface AiFundConceptRow {
   id: string;
-  user_id: string;
+  user_id: string | null;
   name: string;
-  thesis: string | null;
-  sector: string | null;
-  stage: ConceptStage;
-  lp_source: string | null;
-  notes: string | null;
-  metadata: Record<string, unknown> | null;
+  thesis?: string | null;
+  sector?: string | null;
+  stage: string;
+  lp_source?: string | null;
+  notes?: string | null;
+  metadata?: Record<string, unknown> | null;
+  source?: string | null;
+  lp_sponsor?: string | null;
+  brief?: string | null;
+  problem_statement?: string | null;
+  market_theme?: string | null;
+  first_customer_notes?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -610,16 +616,32 @@ export interface AiFundExternalProfileRow {
 // ---------------------------------------------------------------------------
 
 export function conceptFromRow(row: AiFundConceptRow): AiFundConcept {
+  const normalizedStage: ConceptStage = row.stage === "stage_1"
+    ? "ideation"
+    : row.stage === "stage_2"
+      ? "validation"
+      : row.stage === "stage_3"
+        ? "recruiting"
+        : row.stage === "decision"
+          ? "investment_review"
+          : row.stage === "newco"
+            ? "funded"
+            : row.stage === "residency"
+              ? "residency"
+              : row.stage === "archived"
+                ? "archived"
+                : row.stage as ConceptStage;
+
   return {
     id: row.id,
-    userId: row.user_id,
+    userId: row.user_id || "",
     name: row.name,
-    thesis: row.thesis,
-    sector: row.sector,
-    stage: row.stage,
-    lpSource: row.lp_source,
-    notes: row.notes,
-    metadata: row.metadata,
+    thesis: row.thesis ?? row.brief ?? row.problem_statement ?? null,
+    sector: row.sector ?? row.market_theme ?? null,
+    stage: normalizedStage,
+    lpSource: row.lp_source ?? row.lp_sponsor ?? row.source ?? null,
+    notes: row.notes ?? row.first_customer_notes ?? null,
+    metadata: row.metadata ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -62,7 +62,7 @@ export interface PublicAiFundSettings {
   updatedAt: string | null;
 }
 
-const DEFAULT_HARMONIC_BASE_URL = "https://api.harmonic.ai/api/v4_0";
+const DEFAULT_HARMONIC_BASE_URL = "https://api.harmonic.ai";
 
 export const DEFAULT_SOURCING_CHANNELS: SourcingChannelConfig[] = [
   {

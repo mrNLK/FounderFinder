@@ -34,6 +34,45 @@ import {
 } from "@/types/ai-fund";
 import { computeCompositeScore } from "@/lib/aifund-scoring";
 
+async function requireCurrentUser(): Promise<{ userId: string; email: string | null }> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) {
+    throw error;
+  }
+
+  const user = data.user;
+  if (!user) {
+    throw new Error("You must be signed in.");
+  }
+
+  return {
+    userId: user.id,
+    email: user.email ?? null,
+  };
+}
+
+function mapConceptStageForDb(stage: AiFundConcept["stage"] | undefined): string {
+  switch (stage) {
+    case "ideation":
+      return "stage_1";
+    case "validation":
+    case "prototyping":
+      return "stage_2";
+    case "recruiting":
+      return "stage_3";
+    case "residency":
+      return "residency";
+    case "investment_review":
+      return "decision";
+    case "funded":
+      return "newco";
+    case "archived":
+      return "archived";
+    default:
+      return "stage_1";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Concepts (RLS via is_aifund_member() handles access control)
 // ---------------------------------------------------------------------------
@@ -51,16 +90,20 @@ export async function fetchConcepts(): Promise<AiFundConcept[]> {
 export async function createConcept(
   fields: Partial<AiFundConcept>
 ): Promise<AiFundConcept> {
+  const { userId, email } = await requireCurrentUser();
+
   const { data, error } = await supabase
     .from("aifund_concepts")
     .insert({
+      user_id: userId,
       name: fields.name || "Untitled Concept",
-      thesis: fields.thesis || null,
-      sector: fields.sector || null,
-      stage: fields.stage || "ideation",
-      lp_source: fields.lpSource || null,
-      notes: fields.notes || null,
-      metadata: fields.metadata || null,
+      source: "builder",
+      brief: fields.thesis || "",
+      market_theme: fields.sector || "",
+      stage: mapConceptStageForDb(fields.stage),
+      lp_sponsor: fields.lpSource || null,
+      first_customer_notes: fields.notes || null,
+      owner: email || "",
     })
     .select()
     .single();
@@ -75,12 +118,11 @@ export async function updateConcept(
 ): Promise<void> {
   const payload: Record<string, unknown> = {};
   if (updates.name !== undefined) payload.name = updates.name;
-  if (updates.thesis !== undefined) payload.thesis = updates.thesis;
-  if (updates.sector !== undefined) payload.sector = updates.sector;
-  if (updates.stage !== undefined) payload.stage = updates.stage;
-  if (updates.lpSource !== undefined) payload.lp_source = updates.lpSource;
-  if (updates.notes !== undefined) payload.notes = updates.notes;
-  if (updates.metadata !== undefined) payload.metadata = updates.metadata;
+  if (updates.thesis !== undefined) payload.brief = updates.thesis || "";
+  if (updates.sector !== undefined) payload.market_theme = updates.sector || "";
+  if (updates.stage !== undefined) payload.stage = mapConceptStageForDb(updates.stage);
+  if (updates.lpSource !== undefined) payload.lp_sponsor = updates.lpSource;
+  if (updates.notes !== undefined) payload.first_customer_notes = updates.notes;
 
   const { error } = await supabase
     .from("aifund_concepts")
@@ -115,9 +157,12 @@ export async function fetchPeople(): Promise<AiFundPerson[]> {
 export async function createPerson(
   fields: Partial<AiFundPerson>
 ): Promise<AiFundPerson> {
+  const { userId } = await requireCurrentUser();
+
   const { data, error } = await supabase
     .from("aifund_people")
     .insert({
+      user_id: userId,
       full_name: fields.fullName || "Unknown",
       email: fields.email || null,
       linkedin_url: fields.linkedinUrl || null,
@@ -245,9 +290,12 @@ export async function fetchAssignments(): Promise<AiFundAssignment[]> {
 export async function createAssignment(
   fields: Partial<AiFundAssignment>
 ): Promise<AiFundAssignment> {
+  const { userId } = await requireCurrentUser();
+
   const { data, error } = await supabase
     .from("aifund_assignments")
     .insert({
+      user_id: userId,
       concept_id: fields.conceptId,
       person_id: fields.personId,
       role_intent: fields.role || "fir",
@@ -451,7 +499,9 @@ export async function logActivity(
   action: string,
   details?: Record<string, unknown>
 ): Promise<void> {
+  const { userId } = await requireCurrentUser();
   const { error } = await supabase.from("aifund_activity_events").insert({
+    user_id: userId,
     entity_type: entityType,
     entity_id: entityId,
     action,
@@ -477,9 +527,12 @@ export async function fetchIntelligenceRuns(): Promise<AiFundIntelligenceRun[]> 
 export async function createIntelligenceRun(
   fields: Partial<AiFundIntelligenceRun>
 ): Promise<AiFundIntelligenceRun> {
+  const { userId } = await requireCurrentUser();
+
   const { data, error } = await supabase
     .from("aifund_intelligence_runs")
     .insert({
+      user_id: userId,
       provider: fields.provider || "manual",
       query_params: fields.queryParams || {},
       status: "pending",

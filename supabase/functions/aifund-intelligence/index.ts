@@ -70,11 +70,18 @@ interface FunctionErrorBody {
   };
 }
 
+const corsHeaders: HeadersInit = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 function json(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...corsHeaders,
       ...(init?.headers ?? {}),
     },
   });
@@ -565,11 +572,7 @@ async function runHarmonicSearch(
 ): Promise<HarmonicSummary> {
   const searchResults = await searchCompaniesByNaturalLanguage(query, limit, override);
   const urns = searchResults.map((result: { companyUrn: string }) => result.companyUrn);
-  const companyPayloads = await getCompaniesByUrns(
-    urns,
-    ["id", "entity_urn", "name", "website_url", "website_domain", "headcount", "funding", "socials", "location", "founders", "tags"],
-    override,
-  );
+  const companyPayloads = await getCompaniesByUrns(urns, [], override);
   const companies = companyPayloads.map((raw: Record<string, unknown>) => normalizeHarmonicCompany(raw));
   const fetchedAt = new Date().toISOString();
 
@@ -634,6 +637,12 @@ async function updateRunStatus(
 }
 
 Deno.serve(async (request: Request): Promise<Response> => {
+  if (request.method === "OPTIONS") {
+    return new Response("ok", {
+      headers: corsHeaders,
+    });
+  }
+
   if (request.method !== "POST") {
     return errorJson("Method not allowed", "method_not_allowed", 405);
   }

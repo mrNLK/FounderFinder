@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type {
   AiFundAppSettings,
+  AiFundIntegrationTestResult,
   AiFundSettingsUpdate,
   AiFundIntelligenceRun,
   AiFundIntelligenceRunRow,
@@ -39,7 +40,7 @@ export function createDefaultAiFundSettings(): AiFundAppSettings {
         configured: false,
         source: "missing",
         maskedKey: null,
-        baseUrl: "https://api.harmonic.ai/api/v4_0",
+        baseUrl: "https://api.harmonic.ai",
       },
       exa: {
         provider: "exa",
@@ -206,6 +207,29 @@ export async function updateAiFundSettings(
   }
 
   return data as AiFundAppSettings;
+}
+
+export async function testAiFundIntegration(input: {
+  provider: IntegrationProvider;
+  integrations?: Partial<Record<IntegrationProvider, {
+    apiKey?: string | null;
+    baseUrl?: string | null;
+    model?: string | null;
+  }>>;
+}): Promise<AiFundIntegrationTestResult> {
+  const { data, error } = await supabase.functions.invoke("aifund-settings", {
+    body: {
+      action: "test",
+      provider: input.provider,
+      integrations: input.integrations,
+    },
+  });
+
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error));
+  }
+
+  return data as AiFundIntegrationTestResult;
 }
 
 export async function runAiFundIntelligence(input: {

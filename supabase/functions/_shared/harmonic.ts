@@ -1,4 +1,4 @@
-const DEFAULT_HARMONIC_BASE_URL = "https://api.harmonic.ai/api/v4_0";
+const DEFAULT_HARMONIC_BASE_URL = "https://api.harmonic.ai";
 const COMPANY_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
 
 export interface HarmonicFounderSummary {
@@ -147,7 +147,7 @@ export async function harmonicFetch<T>(
 ): Promise<T> {
   const env = getHarmonicEnv(override);
   const headers = new Headers(init?.headers);
-  headers.set("Authorization", `Bearer ${env.apiKey}`);
+  headers.set("apikey", env.apiKey);
   headers.set("Accept", "application/json");
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -202,9 +202,20 @@ function normalizeSearchResults(response: HarmonicSearchResponse): HarmonicSearc
 
   return rawResults
     .map((item: unknown) => {
+      if (typeof item === "string" && item.trim()) {
+        return {
+          companyUrn: item.trim(),
+          id: null,
+          name: null,
+        };
+      }
+
       const record = coerceObject(item);
       return {
-        companyUrn: coerceString(record.company_urn) || coerceString(record.entity_urn) || "",
+        companyUrn: coerceString(record.company_urn) ||
+          coerceString(record.entity_urn) ||
+          coerceString(record.urn) ||
+          "",
         id: coerceNumber(record.id),
         name: coerceString(record.name),
       };
@@ -217,32 +228,12 @@ export async function searchCompaniesByNaturalLanguage(
   limit: number,
   override?: HarmonicEnvOverride,
 ): Promise<HarmonicSearchCompanyResult[]> {
-  const payload = {
+  const params = new URLSearchParams({
     query,
-    size: limit,
-  };
+    size: String(limit),
+  });
 
   try {
-    const response = await harmonicFetch<HarmonicSearchResponse>("/search/search_agent", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }, override);
-    const results = normalizeSearchResults(response);
-    if (results.length > 0) {
-      return results;
-    }
-  } catch (error) {
-    const status = (error as Error & { status?: number }).status;
-    if (status && status < 500 && status !== 404) {
-      throw error;
-    }
-  }
-
-  try {
-    const params = new URLSearchParams({
-      query,
-      size: String(limit),
-    });
     const response = await harmonicFetch<HarmonicSearchResponse>(`/search/search_agent?${params.toString()}`, {
       method: "GET",
     }, override);
@@ -257,9 +248,12 @@ export async function searchCompaniesByNaturalLanguage(
     }
   }
 
-  const fallbackResponse = await harmonicFetch<HarmonicSearchResponse>("/search/companies_by_keywords", {
+  const fallbackResponse = await harmonicFetch<HarmonicSearchResponse>(`/search/companies_by_keywords?size=${limit}`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      keywords: query,
+      include_ids_only: true,
+    }),
   }, override);
 
   return normalizeSearchResults(fallbackResponse);
@@ -273,7 +267,6 @@ export async function getCompaniesByUrns(
   if (urns.length === 0) return [];
 
   const params = new URLSearchParams();
-  params.set("include_fields", includeFields.join(","));
   urns.forEach((urn: string) => params.append("urns", urn));
 
   let response: Record<string, unknown> | Record<string, unknown>[];
@@ -295,7 +288,6 @@ export async function getCompaniesByUrns(
         method: "POST",
         body: JSON.stringify({
           urns,
-          include_fields: includeFields,
         }),
       },
       override,
@@ -315,12 +307,25 @@ export async function getCompaniesByUrns(
 
 export function buildFounderSummaries(companyRaw: Record<string, unknown>): HarmonicFounderSummary[] {
   const founders = toRecordArray(companyRaw.founders);
+  const people = toRecordArray(companyRaw.people);
 
-  return founders.map((founder: Record<string, unknown>) => ({
+  const founderPeople = people.filter((person: Record<string, unknown>) => {
+    const title = [
+      coerceString(person.title),
+      coerceString(person.role),
+      coerceString(person.job_title),
+    ].filter(Boolean).join(" ").toLowerCase();
+    return title.includes("founder");
+  });
+
+  const rawFounders = founders.length > 0 ? founders : founderPeople;
+
+  return rawFounders.map((founder: Record<string, unknown>) => ({
     name: coerceString(founder.name) || "Unknown founder",
     title: coerceString(founder.title) || coerceString(founder.role),
     linkedinUrl: normalizeLinkedInUrl(
       coerceString(coerceObject(founder.socials).linkedin_url) ||
+      coerceString(coerceObject(coerceObject(founder.socials).LINKEDIN).url) ||
       coerceString(founder.linkedin_url),
     ),
   }));
@@ -328,10 +333,17 @@ export function buildFounderSummaries(companyRaw: Record<string, unknown>): Harm
 
 export function normalizeHarmonicCompany(raw: Record<string, unknown>): NormalizedHarmonicCompany {
   const socials = coerceObject(raw.socials);
+  const linkedinSocial = coerceObject(socials.LINKEDIN);
   const funding = coerceObject(raw.funding);
+  const website = coerceObject(raw.website);
   const tags = Array.isArray(raw.tags) ? raw.tags.filter((item: unknown) => typeof item === "string") as string[] : [];
+  const locationDetails = coerceObject(raw.location);
   const location = [
+    coerceString(locationDetails.location),
     coerceString(raw.location),
+    coerceString(locationDetails.city),
+    coerceString(locationDetails.state),
+    coerceString(locationDetails.country),
     coerceString(raw.city),
     coerceString(raw.country),
   ].filter(Boolean).join(", ") || null;
@@ -341,11 +353,19 @@ export function normalizeHarmonicCompany(raw: Record<string, unknown>): Normaliz
   return {
     harmonicCompanyId,
     name: coerceString(raw.name) || "Unknown company",
-    domain: coerceString(raw.website_domain) || coerceString(raw.domain),
-    linkedinUrl: normalizeLinkedInUrl(coerceString(socials.linkedin_url) || coerceString(raw.linkedin_url)),
-    websiteUrl: normalizeWebsiteUrl(coerceString(raw.website_url) || coerceString(socials.website_url)),
+    domain: coerceString(website.domain) || coerceString(raw.website_domain) || coerceString(raw.domain),
+    linkedinUrl: normalizeLinkedInUrl(
+      coerceString(linkedinSocial.url) ||
+      coerceString(socials.linkedin_url) ||
+      coerceString(raw.linkedin_url),
+    ),
+    websiteUrl: normalizeWebsiteUrl(
+      coerceString(website.url) ||
+      coerceString(raw.website_url) ||
+      coerceString(socials.website_url),
+    ),
     location,
-    fundingStage: coerceString(funding.funding_stage) || coerceString(raw.funding_stage),
+    fundingStage: coerceString(funding.funding_stage) || coerceString(raw.stage) || coerceString(raw.funding_stage),
     fundingTotal: coerceNumber(funding.funding_total) ?? coerceNumber(raw.funding_total),
     lastFundingDate: coerceString(funding.last_funding_at) || coerceString(raw.last_funding_at),
     lastFundingTotal: coerceNumber(funding.last_funding_total) ?? coerceNumber(raw.last_funding_total),
