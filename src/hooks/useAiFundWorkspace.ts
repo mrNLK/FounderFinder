@@ -13,6 +13,7 @@ import {
   type AiFundEvaluationScore,
   type AiFundDashboardStats,
   type AiFundWorkspace,
+  personFromRow,
 } from "@/types/ai-fund";
 import {
   fetchConcepts,
@@ -26,6 +27,7 @@ import {
   createScore,
   fetchDashboardStats,
 } from "@/lib/ai-fund";
+import { enrichPersonWithHarmonic } from "@/lib/harmonic";
 
 export function useAiFundWorkspace(): AiFundWorkspace {
   const [concepts, setConcepts] = useState<AiFundConcept[]>([]);
@@ -58,13 +60,62 @@ export function useAiFundWorkspace(): AiFundWorkspace {
       setAssignments(a);
       setStats(s);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to load AI Fund data";
+      const msg = err instanceof Error
+        ? err.message
+        : (err as { message?: string })?.message || "Failed to load AI Fund data";
       setError(msg);
       console.error("useAiFundWorkspace refresh error:", err);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const mergePerson = useCallback((row: ReturnType<typeof personFromRow>): void => {
+    setPeople((prev) => {
+      const exists = prev.some((person) => person.id === row.id);
+      if (!exists) {
+        return [row, ...prev];
+      }
+
+      return prev.map((person) => (
+        person.id === row.id ? row : person
+      ));
+    });
+  }, []);
+
+  const triggerHarmonicEnrichment = useCallback(
+    async (
+      personId: string,
+      person: Partial<AiFundPerson>,
+    ): Promise<void> => {
+      const linkedinUrl = person.linkedinUrl || null;
+      if (!linkedinUrl) return;
+
+      try {
+        const response = await enrichPersonWithHarmonic({
+          personId,
+          linkedinUrl,
+          personContext: {
+            fullName: person.fullName || null,
+            currentRole: person.currentRole || null,
+            currentCompany: person.currentCompany || null,
+            location: person.location || null,
+          },
+        });
+
+        if (response.person) {
+          mergePerson(personFromRow(response.person));
+        }
+
+        if (response.notFound) {
+          console.warn(`Harmonic did not find a profile for person ${personId}`);
+        }
+      } catch (err: unknown) {
+        console.warn("Harmonic enrichment warning:", err);
+      }
+    },
+    [mergePerson],
+  );
 
   useEffect(() => {
     refresh();
@@ -99,23 +150,40 @@ export function useAiFundWorkspace(): AiFundWorkspace {
       try {
         const person = await createPerson(fields);
         setPeople((prev) => [person, ...prev]);
+        if (person.linkedinUrl) {
+          await triggerHarmonicEnrichment(person.id, person);
+        }
         return person;
       } catch (err) {
         console.error("addPerson error:", err);
         return null;
       }
     },
-    []
+    [triggerHarmonicEnrichment]
   );
 
   const updatePersonHandler = useCallback(
     async (id: string, updates: Partial<AiFundPerson>): Promise<void> => {
       await updatePersonDb(id, updates);
-      setPeople((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
-      );
+      const existingPerson = people.find((person) => person.id === id);
+      const updatedPerson = existingPerson ? { ...existingPerson, ...updates } : null;
+
+      setPeople((prev) => prev.map((person) => (
+        person.id === id ? { ...person, ...updates } : person
+      )));
+
+      const shouldEnrich =
+        updates.linkedinUrl !== undefined ||
+        updates.fullName !== undefined ||
+        updates.currentRole !== undefined ||
+        updates.currentCompany !== undefined ||
+        updates.location !== undefined;
+
+      if (shouldEnrich && updatedPerson?.linkedinUrl) {
+        await triggerHarmonicEnrichment(id, updatedPerson);
+      }
     },
-    []
+    [people, triggerHarmonicEnrichment]
   );
 
   const addAssignmentHandler = useCallback(
@@ -124,6 +192,18 @@ export function useAiFundWorkspace(): AiFundWorkspace {
       setAssignments((prev) => [assignment, ...prev]);
     },
     []
+  );
+
+  const refreshPersonEnrichmentHandler = useCallback(
+    async (personId: string): Promise<void> => {
+      const person = people.find((candidate) => candidate.id === personId);
+      if (!person?.linkedinUrl) {
+        return;
+      }
+
+      await triggerHarmonicEnrichment(personId, person);
+    },
+    [people, triggerHarmonicEnrichment],
   );
 
   const scoreCandidateHandler = useCallback(
@@ -145,6 +225,7 @@ export function useAiFundWorkspace(): AiFundWorkspace {
     updateConcept: updateConceptHandler,
     addPerson,
     updatePerson: updatePersonHandler,
+    refreshPersonEnrichment: refreshPersonEnrichmentHandler,
     addAssignment: addAssignmentHandler,
     scoreCandidate: scoreCandidateHandler,
   };

@@ -16,6 +16,7 @@ import {
   type AiFundDecisionMemo,
   type AiFundActivityEvent,
   type AiFundIntelligenceRun,
+  type AiFundHarmonicIntelligenceSummary,
   type AiFundEvidence,
   type AiFundExternalProfile,
   type AiFundDashboardStats,
@@ -35,25 +36,13 @@ import {
 import { computeCompositeScore } from "@/lib/aifund-scoring";
 
 // ---------------------------------------------------------------------------
-// Auth helper
-// ---------------------------------------------------------------------------
-
-async function getUserId(): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user?.id) throw new Error("Not authenticated");
-  return session.user.id;
-}
-
-// ---------------------------------------------------------------------------
-// Concepts
+// Concepts (RLS via is_aifund_member() handles access control)
 // ---------------------------------------------------------------------------
 
 export async function fetchConcepts(): Promise<AiFundConcept[]> {
-  const userId = await getUserId();
   const { data, error } = await supabase
     .from("aifund_concepts")
     .select("*")
-    .eq("user_id", userId)
     .order("updated_at", { ascending: false });
 
   if (error) throw error;
@@ -63,11 +52,9 @@ export async function fetchConcepts(): Promise<AiFundConcept[]> {
 export async function createConcept(
   fields: Partial<AiFundConcept>
 ): Promise<AiFundConcept> {
-  const userId = await getUserId();
   const { data, error } = await supabase
     .from("aifund_concepts")
     .insert({
-      user_id: userId,
       name: fields.name || "Untitled Concept",
       thesis: fields.thesis || null,
       sector: fields.sector || null,
@@ -117,11 +104,9 @@ export async function deleteConcept(id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function fetchPeople(): Promise<AiFundPerson[]> {
-  const userId = await getUserId();
   const { data, error } = await supabase
     .from("aifund_people")
     .select("*")
-    .eq("user_id", userId)
     .order("updated_at", { ascending: false });
 
   if (error) throw error;
@@ -131,11 +116,9 @@ export async function fetchPeople(): Promise<AiFundPerson[]> {
 export async function createPerson(
   fields: Partial<AiFundPerson>
 ): Promise<AiFundPerson> {
-  const userId = await getUserId();
   const { data, error } = await supabase
     .from("aifund_people")
     .insert({
-      user_id: userId,
       full_name: fields.fullName || "Unknown",
       email: fields.email || null,
       linkedin_url: fields.linkedinUrl || null,
@@ -151,6 +134,8 @@ export async function createPerson(
       source_channel: fields.sourceChannel || null,
       tags: fields.tags || [],
       metadata: fields.metadata || null,
+      harmonic_person_id: fields.harmonicPersonId || null,
+      harmonic_enriched_at: fields.harmonicEnrichedAt || null,
     })
     .select()
     .single();
@@ -179,6 +164,8 @@ export async function updatePerson(
   if (updates.sourceChannel !== undefined) payload.source_channel = updates.sourceChannel;
   if (updates.tags !== undefined) payload.tags = updates.tags;
   if (updates.metadata !== undefined) payload.metadata = updates.metadata;
+  if (updates.harmonicPersonId !== undefined) payload.harmonic_person_id = updates.harmonicPersonId;
+  if (updates.harmonicEnrichedAt !== undefined) payload.harmonic_enriched_at = updates.harmonicEnrichedAt;
 
   const { error } = await supabase
     .from("aifund_people")
@@ -449,11 +436,9 @@ export async function createEvidence(
 export async function fetchRecentActivity(
   limit = 20
 ): Promise<AiFundActivityEvent[]> {
-  const userId = await getUserId();
   const { data, error } = await supabase
     .from("aifund_activity_events")
     .select("*")
-    .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -467,9 +452,7 @@ export async function logActivity(
   action: string,
   details?: Record<string, unknown>
 ): Promise<void> {
-  const userId = await getUserId();
   const { error } = await supabase.from("aifund_activity_events").insert({
-    user_id: userId,
     entity_type: entityType,
     entity_id: entityId,
     action,
@@ -483,11 +466,9 @@ export async function logActivity(
 // ---------------------------------------------------------------------------
 
 export async function fetchIntelligenceRuns(): Promise<AiFundIntelligenceRun[]> {
-  const userId = await getUserId();
   const { data, error } = await supabase
     .from("aifund_intelligence_runs")
     .select("*")
-    .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -497,11 +478,9 @@ export async function fetchIntelligenceRuns(): Promise<AiFundIntelligenceRun[]> 
 export async function createIntelligenceRun(
   fields: Partial<AiFundIntelligenceRun>
 ): Promise<AiFundIntelligenceRun> {
-  const userId = await getUserId();
   const { data, error } = await supabase
     .from("aifund_intelligence_runs")
     .insert({
-      user_id: userId,
       provider: fields.provider || "manual",
       query_params: fields.queryParams || {},
       status: "pending",
@@ -532,23 +511,31 @@ export async function updateIntelligenceRun(
   if (error) throw error;
 }
 
+export async function updateHarmonicIntelligenceRunSummary(
+  id: string,
+  summary: AiFundHarmonicIntelligenceSummary
+): Promise<void> {
+  await updateIntelligenceRun(id, {
+    resultsCount: summary.companies.length,
+    resultsSummary: summary,
+    completedAt: summary.fetchedAt,
+    status: summary.error ? "failed" : "completed",
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard Stats (aggregated)
 // ---------------------------------------------------------------------------
 
 export async function fetchDashboardStats(): Promise<AiFundDashboardStats> {
-  const userId = await getUserId();
-
   const [conceptsRes, peopleRes, residenciesRes, decisionsRes, activityRes] =
     await Promise.all([
       supabase
         .from("aifund_concepts")
-        .select("id, stage")
-        .eq("user_id", userId),
+        .select("id, stage"),
       supabase
         .from("aifund_people")
-        .select("id, process_stage")
-        .eq("user_id", userId),
+        .select("id, process_stage"),
       supabase
         .from("aifund_residencies")
         .select("id, status"),
@@ -558,7 +545,6 @@ export async function fetchDashboardStats(): Promise<AiFundDashboardStats> {
       supabase
         .from("aifund_activity_events")
         .select("*")
-        .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
@@ -634,12 +620,10 @@ export async function fetchPeopleWithScores(): Promise<PersonWithScores[]> {
 export async function fetchConceptWithDetails(
   conceptId: string
 ): Promise<ConceptWithAssignments | null> {
-  const userId = await getUserId();
   const { data: conceptRow, error } = await supabase
     .from("aifund_concepts")
     .select("*")
     .eq("id", conceptId)
-    .eq("user_id", userId)
     .single();
 
   if (error || !conceptRow) return null;
