@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronRight, Briefcase } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Briefcase } from "lucide-react";
 import type { AiFundWorkspace, AiFundConcept, ConceptStage } from "@/types/ai-fund";
 
 interface Props {
@@ -70,6 +70,13 @@ export default function ConceptPipelineTab({ workspace }: Props) {
     if (idx < STAGE_ORDER.length - 2) {
       // Don't advance to "archived" automatically
       await updateConcept(concept.id, { stage: STAGE_ORDER[idx + 1] });
+    }
+  };
+
+  const handleRetreatStage = async (concept: AiFundConcept) => {
+    const idx = STAGE_ORDER.indexOf(concept.stage);
+    if (idx > 0) {
+      await updateConcept(concept.id, { stage: STAGE_ORDER[idx - 1] });
     }
   };
 
@@ -189,15 +196,26 @@ export default function ConceptPipelineTab({ workspace }: Props) {
                         {concept.sector}
                       </span>
                     )}
-                    {stage !== "funded" && stage !== "archived" && (
-                      <button
-                        onClick={() => handleAdvanceStage(concept)}
-                        title="Advance to next stage"
-                        className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {stage !== "ideation" && (
+                        <button
+                          onClick={() => handleRetreatStage(concept)}
+                          title="Move to previous stage"
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                      )}
+                      {stage !== "funded" && stage !== "archived" && (
+                        <button
+                          onClick={() => handleAdvanceStage(concept)}
+                          title="Advance to next stage"
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

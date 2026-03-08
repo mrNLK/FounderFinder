@@ -9,6 +9,7 @@ import type {
 } from "@/types/ai-fund";
 import { computeCompositeScore, scoreColor, scoreLabel } from "@/lib/aifund-scoring";
 import { fetchScoresForPerson } from "@/lib/ai-fund";
+import PersonDetail from "@/components/ai-fund/PersonDetail";
 
 interface Props {
   workspace: AiFundWorkspace;
@@ -73,6 +74,7 @@ function sourceChannelLabel(workspace: AiFundWorkspace, value: string | null): s
 export default function TalentPoolTab({ workspace }: Props) {
   const { people, loading, addPerson, refreshPersonEnrichment } = workspace;
   const [showForm, setShowForm] = useState(false);
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<PersonType | "all">("all");
   const [filterStage, setFilterStage] = useState<ProcessStage | "all">("all");
   const [scores, setScores] = useState<Record<string, number | null>>({});
@@ -233,6 +235,10 @@ export default function TalentPoolTab({ workspace }: Props) {
     return true;
   });
 
+  const selectedPerson = selectedPersonId
+    ? people.find((person) => person.id === selectedPersonId) || null
+    : null;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -362,6 +368,14 @@ export default function TalentPoolTab({ workspace }: Props) {
         </div>
       )}
 
+      {selectedPerson && (
+        <PersonDetail
+          person={selectedPerson}
+          workspace={workspace}
+          onClose={() => setSelectedPersonId(null)}
+        />
+      )}
+
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-border bg-card py-12 text-center">
           <p className="text-sm text-muted-foreground">
@@ -378,7 +392,20 @@ export default function TalentPoolTab({ workspace }: Props) {
                 key={person.id}
                 className="space-y-3 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-primary/30"
               >
-                <div className="flex items-start gap-3">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedPersonId(person.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedPersonId(person.id);
+                    }
+                  }}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg outline-none transition-colors focus-visible:ring-1 focus-visible:ring-primary ${
+                    selectedPersonId === person.id ? "bg-primary/5" : ""
+                  }`}
+                >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                     {person.fullName.charAt(0).toUpperCase()}
                   </div>
@@ -391,6 +418,7 @@ export default function TalentPoolTab({ workspace }: Props) {
                           href={person.linkedinUrl}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(event) => event.stopPropagation()}
                           className="text-muted-foreground transition-colors hover:text-primary"
                         >
                           <ExternalLink className="h-3 w-3" />
@@ -429,7 +457,10 @@ export default function TalentPoolTab({ workspace }: Props) {
                     </span>
                     <button
                       type="button"
-                      onClick={() => startScoring(person.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        startScoring(person.id);
+                      }}
                       className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                     >
                       Score
@@ -437,7 +468,10 @@ export default function TalentPoolTab({ workspace }: Props) {
                     {person.linkedinUrl && (
                       <button
                         type="button"
-                        onClick={() => handleRefreshHarmonic(person.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleRefreshHarmonic(person.id);
+                        }}
                         disabled={refreshingPersonId === person.id}
                         className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
                       >
