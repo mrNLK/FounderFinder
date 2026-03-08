@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import AIFundDashboard from "@/components/AIFundDashboard";
-import { LogIn, Loader2, Search } from "lucide-react";
+import { LogIn, Loader2, Search, ShieldX } from "lucide-react";
+import { fetchActiveAppMembership } from "@/lib/app-membership";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<unknown>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -16,11 +19,33 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setSession(session);
+        if (!session) {
+          setAuthorized(null);
+        }
       }
     );
 
     return () => listener?.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!session) {
+      setAuthorized(null);
+      return;
+    }
+
+    checkMembership();
+  }, [session]);
+
+  const checkMembership = async () => {
+    try {
+      const membership = await fetchActiveAppMembership("founderfinder");
+      setAuthorized(membership !== null);
+    } catch (error) {
+      console.error("Founder Finder membership check failed:", error);
+      setAuthorized(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -34,16 +59,53 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return <LoginPage />;
   }
 
+  if (authorized === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!authorized) {
+    return <AccessDenied />;
+  }
+
   return <>{children}</>;
+}
+
+function AccessDenied() {
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md space-y-6 text-center">
+        <div className="w-12 h-12 rounded-xl bg-destructive/10 flex items-center justify-center mx-auto">
+          <ShieldX className="w-6 h-6 text-destructive" />
+        </div>
+        <h1 className="text-2xl font-semibold text-foreground">Access Restricted</h1>
+        <p className="text-muted-foreground text-sm">
+          Founder Finder is restricted to approved AI Fund members. Contact
+          mike@aifund.ai if you need access.
+        </p>
+        <button
+          onClick={handleSignOut}
+          className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-sm hover:bg-secondary/80 transition-colors"
+        >
+          Sign Out
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,68 +113,17 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: window.location.origin,
-          },
-        });
-        if (error) throw error;
-        setMagicLinkSent(true);
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
-      }
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Auth failed");
     } finally {
       setLoading(false);
     }
   };
-
-  const handleMagicLink = async () => {
-    if (!email.trim()) {
-      setError("Enter your email first");
-      return;
-    }
-    setError(null);
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: window.location.origin,
-        },
-      });
-      if (error) throw error;
-      setMagicLinkSent(true);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to send link");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (magicLinkSent) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <div className="w-full max-w-md space-y-6 text-center">
-          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto">
-            <Search className="w-6 h-6 text-primary" />
-          </div>
-          <h1 className="text-2xl font-semibold text-foreground">Check your email</h1>
-          <p className="text-muted-foreground text-sm">
-            We sent a confirmation link to <strong>{email}</strong>
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -124,6 +135,9 @@ function LoginPage() {
           <h1 className="text-2xl font-semibold text-foreground">Founder Finder</h1>
           <p className="text-muted-foreground text-sm">
             AI Fund Venture Creation Pipeline
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Private app. Approved members only.
           </p>
         </div>
 
@@ -140,7 +154,7 @@ function LoginPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="you@aifund.ai"
               className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               required
             />
@@ -168,32 +182,11 @@ function LoginPage() {
             ) : (
               <LogIn className="w-4 h-4" />
             )}
-            {isSignUp ? "Create Account" : "Sign In"}
+            Sign In
           </button>
         </form>
-
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-border" />
-          <span className="text-xs text-muted-foreground">or</span>
-          <div className="flex-1 h-px bg-border" />
-        </div>
-
-        <button
-          onClick={handleMagicLink}
-          disabled={loading}
-          className="w-full px-4 py-2.5 rounded-lg bg-secondary text-secondary-foreground font-medium text-sm hover:bg-secondary/80 transition-colors"
-        >
-          Send Magic Link
-        </button>
-
         <p className="text-center text-xs text-muted-foreground">
-          {isSignUp ? "Already have an account?" : "Need an account?"}{" "}
-          <button
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-primary hover:underline"
-          >
-            {isSignUp ? "Sign in" : "Sign up"}
-          </button>
+          No self-serve access. Contact mike@aifund.ai if you need an account.
         </p>
       </div>
     </div>
