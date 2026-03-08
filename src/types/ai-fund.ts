@@ -383,6 +383,14 @@ export interface AiFundSettingsUpdate {
   sourcingChannels?: AiFundSourcingChannel[];
 }
 
+export interface AiFundIntegrationTestResult {
+  provider: IntegrationProvider;
+  ok: boolean;
+  checkedAt: string;
+  message: string;
+  metadata: Record<string, unknown> | null;
+}
+
 // ---------------------------------------------------------------------------
 // Scoring Weights
 // ---------------------------------------------------------------------------
@@ -504,10 +512,14 @@ export interface AiFundAssignmentRow {
   id: string;
   concept_id: string;
   person_id: string;
-  role: AssignmentRole;
+  role_intent: string | null;
+  fit_rationale: string | null;
+  owner: string | null;
+  priority: string | null;
+  confidence: string | null;
   status: string;
-  assigned_at: string;
-  notes: string | null;
+  created_at: string;
+  user_id: string;
 }
 
 export interface AiFundEngagementRow {
@@ -538,14 +550,14 @@ export interface AiFundResidencyRow {
 export interface AiFundDecisionMemoRow {
   id: string;
   concept_id: string;
-  author_id: string | null;
-  outcome: DecisionOutcome;
-  investment_amount: number | null;
-  valuation: number | null;
-  rationale: string | null;
-  conditions: string | null;
-  decided_at: string;
+  person_id: string | null;
+  recommendation: string | null;
+  summary: string | null;
+  key_risks: string | null;
+  catalysts: string | null;
+  author: string | null;
   created_at: string;
+  user_id: string;
 }
 
 export interface AiFundActivityEventRow {
@@ -659,10 +671,10 @@ export function assignmentFromRow(row: AiFundAssignmentRow): AiFundAssignment {
     id: row.id,
     conceptId: row.concept_id,
     personId: row.person_id,
-    role: row.role,
+    role: (row.role_intent as AssignmentRole) || "fir",
     status: row.status,
-    assignedAt: row.assigned_at,
-    notes: row.notes,
+    assignedAt: row.created_at,
+    notes: row.fit_rationale,
   };
 }
 
@@ -699,13 +711,13 @@ export function decisionMemoFromRow(row: AiFundDecisionMemoRow): AiFundDecisionM
   return {
     id: row.id,
     conceptId: row.concept_id,
-    authorId: row.author_id,
-    outcome: row.outcome,
-    investmentAmount: row.investment_amount,
-    valuation: row.valuation,
-    rationale: row.rationale,
-    conditions: row.conditions,
-    decidedAt: row.decided_at,
+    authorId: row.author,
+    outcome: (row.recommendation as DecisionOutcome) || "defer",
+    investmentAmount: null,
+    valuation: null,
+    rationale: row.summary,
+    conditions: row.key_risks,
+    decidedAt: row.created_at,
     createdAt: row.created_at,
   };
 }

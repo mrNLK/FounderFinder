@@ -236,7 +236,7 @@ export async function fetchAssignments(): Promise<AiFundAssignment[]> {
   const { data, error } = await supabase
     .from("aifund_assignments")
     .select("*")
-    .order("assigned_at", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (error) throw error;
   return (data || []).map(assignmentFromRow);
@@ -250,9 +250,9 @@ export async function createAssignment(
     .insert({
       concept_id: fields.conceptId,
       person_id: fields.personId,
-      role: fields.role || "fir",
+      role_intent: fields.role || "fir",
       status: fields.status || "proposed",
-      notes: fields.notes || null,
+      fit_rationale: fields.notes || null,
     })
     .select()
     .single();
@@ -267,8 +267,8 @@ export async function updateAssignment(
 ): Promise<void> {
   const payload: Record<string, unknown> = {};
   if (updates.status !== undefined) payload.status = updates.status;
-  if (updates.notes !== undefined) payload.notes = updates.notes;
-  if (updates.role !== undefined) payload.role = updates.role;
+  if (updates.notes !== undefined) payload.fit_rationale = updates.notes;
+  if (updates.role !== undefined) payload.role_intent = updates.role;
 
   const { error } = await supabase
     .from("aifund_assignments")
@@ -363,7 +363,7 @@ export async function fetchDecisionMemos(
     .from("aifund_decision_memos")
     .select("*")
     .eq("concept_id", conceptId)
-    .order("decided_at", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (error) throw error;
   return (data || []).map(decisionMemoFromRow);
@@ -376,12 +376,12 @@ export async function createDecisionMemo(
     .from("aifund_decision_memos")
     .insert({
       concept_id: fields.conceptId,
-      author_id: fields.authorId || null,
-      outcome: fields.outcome || "defer",
-      investment_amount: fields.investmentAmount || null,
-      valuation: fields.valuation || null,
-      rationale: fields.rationale || null,
-      conditions: fields.conditions || null,
+      person_id: null,
+      recommendation: fields.outcome || "defer",
+      summary: fields.rationale || null,
+      key_risks: fields.conditions || null,
+      catalysts: null,
+      author: fields.authorId || null,
     })
     .select()
     .single();
@@ -540,7 +540,7 @@ export async function fetchDashboardStats(): Promise<AiFundDashboardStats> {
         .select("id, status"),
       supabase
         .from("aifund_decision_memos")
-        .select("id, outcome"),
+        .select("id, recommendation"),
       supabase
         .from("aifund_activity_events")
         .select("*")
@@ -570,7 +570,7 @@ export async function fetchDashboardStats(): Promise<AiFundDashboardStats> {
   ]);
 
   const pending = (decisionsRes.data || []).filter(
-    (d: { outcome: string }) => d.outcome === "defer"
+    (d: { recommendation: string }) => d.recommendation === "defer"
   );
 
   return {
