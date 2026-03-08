@@ -45,14 +45,20 @@ export default function ConceptPipelineTab({ workspace }: Props) {
   const [newName, setNewName] = useState("");
   const [newThesis, setNewThesis] = useState("");
   const [newSector, setNewSector] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
-    await addConcept({
+    setFormError(null);
+    const concept = await addConcept({
       name: newName.trim(),
       thesis: newThesis.trim() || null,
       sector: newSector.trim() || null,
     });
+    if (!concept) {
+      setFormError("Failed to create concept");
+      return;
+    }
     setNewName("");
     setNewThesis("");
     setNewSector("");
@@ -105,6 +111,11 @@ export default function ConceptPipelineTab({ workspace }: Props) {
       {/* Add concept form */}
       {showForm && (
         <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+          {formError && (
+            <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {formError}
+            </div>
+          )}
           <input
             type="text"
             placeholder="Concept name"

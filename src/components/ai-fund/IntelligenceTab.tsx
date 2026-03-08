@@ -11,6 +11,7 @@ import {
 import type {
   AiFundHarmonicFounderSummary,
   AiFundHarmonicIntelligenceSummary,
+  AiFundHarmonicSavedSearch,
   AiFundIntelligenceImportCandidate,
   AiFundIntelligenceRun,
   AiFundProviderIntelligenceSummary,
@@ -21,6 +22,11 @@ import type {
 } from "@/types/ai-fund";
 import { createIntelligenceRun, fetchIntelligenceRuns } from "@/lib/ai-fund";
 import { runAiFundIntelligence } from "@/lib/aifund-settings";
+import {
+  fetchHarmonicSavedSearches,
+  runHarmonicIntelligence,
+  updateHarmonicSavedSearchStatus,
+} from "@/lib/harmonic";
 
 interface Props {
   workspace: AiFundWorkspace;
@@ -65,26 +71,53 @@ function getChannelLabel(
 
 export default function IntelligenceTab({ workspace }: Props) {
   const [runs, setRuns] = useState<AiFundIntelligenceRun[]>([]);
+  const [savedSearches, setSavedSearches] = useState<AiFundHarmonicSavedSearch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savedSearchesLoading, setSavedSearchesLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedSearchError, setSavedSearchError] = useState<string | null>(null);
   const [importingKey, setImportingKey] = useState<string | null>(null);
+  const [updatingSavedSearchId, setUpdatingSavedSearchId] = useState<string | null>(null);
 
   const [formProvider, setFormProvider] = useState<Exclude<IntelligenceProvider, "manual">>("harmonic");
   const [formQuery, setFormQuery] = useState("");
   const [formConceptId, setFormConceptId] = useState<string>("");
   const [formChannelIds, setFormChannelIds] = useState<string[]>([]);
 
+  const loadSavedSearches = async (): Promise<void> => {
+    setSavedSearchError(null);
+    setSavedSearchesLoading(true);
+
+    try {
+      const rows = await fetchHarmonicSavedSearches();
+      setSavedSearches(rows);
+    } catch (loadError) {
+      console.error("Failed to load Harmonic saved searches:", loadError);
+      setSavedSearchError(loadError instanceof Error ? loadError.message : "Failed to load Harmonic saved searches");
+    } finally {
+      setSavedSearchesLoading(false);
+    }
+  };
+
   useEffect(() => {
     const load = async (): Promise<void> => {
       try {
-        const intelligenceRuns = await fetchIntelligenceRuns();
+        const [intelligenceRuns, harmonicSavedSearchRows] = await Promise.all([
+          fetchIntelligenceRuns(),
+          fetchHarmonicSavedSearches(),
+        ]);
         setRuns(intelligenceRuns);
+        setSavedSearches(harmonicSavedSearchRows);
       } catch (loadError) {
-        console.error("Failed to load intelligence runs:", loadError);
+        console.error("Failed to load intelligence workspace data:", loadError);
+        if (loadError instanceof Error) {
+          setSavedSearchError(loadError.message);
+        }
       } finally {
         setLoading(false);
+        setSavedSearchesLoading(false);
       }
     };
 
@@ -126,6 +159,15 @@ export default function IntelligenceTab({ workspace }: Props) {
   }, [availableChannels, formProvider]);
 
   const selectedProviderConfigured = workspace.settings.integrations[formProvider].configured;
+  const savedSearchQueue = useMemo(() => (
+    savedSearches.filter((savedSearch) => (
+      savedSearch.status !== "reviewed" && savedSearch.status !== "dismissed"
+    ))
+  ), [savedSearches]);
+
+  const resolveConceptName = (conceptId: string): string => (
+    workspace.concepts.find((concept) => concept.id === conceptId)?.name || "Unknown concept"
+  );
 
   const getHarmonicSummary = (
     run: AiFundIntelligenceRun,
@@ -246,6 +288,25 @@ export default function IntelligenceTab({ workspace }: Props) {
     }, importKey);
   };
 
+  const handleSavedSearchStatusUpdate = async (
+    savedSearchId: string,
+    status: string,
+  ): Promise<void> => {
+    try {
+      setUpdatingSavedSearchId(savedSearchId);
+      setSavedSearchError(null);
+      const updatedSavedSearch = await updateHarmonicSavedSearchStatus(savedSearchId, status);
+      setSavedSearches((currentValue) => currentValue.map((savedSearch) => (
+        savedSearch.id === savedSearchId ? updatedSavedSearch : savedSearch
+      )));
+    } catch (updateError) {
+      console.error("Failed to update Harmonic saved search status:", updateError);
+      setSavedSearchError(updateError instanceof Error ? updateError.message : "Failed to update Harmonic saved search");
+    } finally {
+      setUpdatingSavedSearchId(null);
+    }
+  };
+
   const handleCreate = async (): Promise<void> => {
     if (!formQuery.trim() || !selectedProviderConfigured) {
       return;
@@ -266,21 +327,47 @@ export default function IntelligenceTab({ workspace }: Props) {
 
       setRuns((prev) => [run, ...prev]);
 
-      const response = await runAiFundIntelligence({
-        runId: run.id,
-        query: formQuery.trim(),
-        conceptId: formConceptId || null,
-        channelIds: formProvider === "harmonic" ? [] : formChannelIds,
-      });
+      let completedRun: AiFundIntelligenceRun = run;
+      let completedResultsSummary: AiFundIntelligenceRun["resultsSummary"] = null;
+
+      if (formProvider === "harmonic") {
+        const harmonicResponse = await runHarmonicIntelligence({
+          runId: run.id,
+          query: formQuery.trim(),
+          conceptId: formConceptId || null,
+        });
+
+        completedRun = {
+          ...run,
+          status: harmonicResponse.run.status as IntelligenceRunStatus,
+          resultsCount: harmonicResponse.run.results_count,
+          completedAt: harmonicResponse.run.completed_at,
+        };
+        completedResultsSummary = harmonicResponse.run.results_summary;
+      } else {
+        const providerResponse = await runAiFundIntelligence({
+          runId: run.id,
+          query: formQuery.trim(),
+          conceptId: formConceptId || null,
+          channelIds: formChannelIds,
+        });
+
+        completedRun = providerResponse.run;
+        completedResultsSummary = providerResponse.resultsSummary;
+      }
 
       setRuns((prev) => prev.map((existingRun) => (
         existingRun.id === run.id
           ? {
-              ...response.run,
-              resultsSummary: response.resultsSummary,
+              ...completedRun,
+              resultsSummary: completedResultsSummary,
             }
           : existingRun
       )));
+
+      if (formProvider === "harmonic") {
+        await loadSavedSearches();
+      }
 
       setFormQuery("");
       setFormConceptId("");
@@ -423,6 +510,90 @@ export default function IntelligenceTab({ workspace }: Props) {
         </div>
       )}
 
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Saved Search Review Queue</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Draft Harmonic concept searches waiting for review
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadSavedSearches()}
+            disabled={savedSearchesLoading}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+          >
+            {savedSearchesLoading ? "Refreshing..." : "Refresh queue"}
+          </button>
+        </div>
+
+        {savedSearchError && (
+          <div className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {savedSearchError}
+          </div>
+        )}
+
+        {savedSearchesLoading && loading ? (
+          <div className="rounded-lg border border-border bg-background px-3 py-6 text-center text-sm text-muted-foreground">
+            Loading saved searches...
+          </div>
+        ) : savedSearchQueue.length === 0 ? (
+          <div className="rounded-lg border border-border bg-background px-3 py-6 text-center text-sm text-muted-foreground">
+            No saved-search drafts waiting for review.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {savedSearchQueue.map((savedSearch) => (
+              <div
+                key={savedSearch.id}
+                className="rounded-lg border border-border bg-background px-4 py-3"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {resolveConceptName(savedSearch.conceptId)}
+                      </span>
+                      <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] uppercase text-primary">
+                        {savedSearch.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {savedSearch.queryText}
+                    </p>
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      {savedSearch.resultCount} results
+                      {" • "}
+                      Updated {new Date(savedSearch.updatedAt).toLocaleString()}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleSavedSearchStatusUpdate(savedSearch.id, "reviewed")}
+                      disabled={updatingSavedSearchId === savedSearch.id}
+                      className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+                    >
+                      {updatingSavedSearchId === savedSearch.id ? "Saving..." : "Mark reviewed"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSavedSearchStatusUpdate(savedSearch.id, "dismissed")}
+                      disabled={updatingSavedSearchId === savedSearch.id}
+                      className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {runs.length === 0 ? (
         <div className="py-12 text-center bg-card border border-border rounded-xl">
           <p className="text-sm text-muted-foreground">
@@ -461,7 +632,7 @@ export default function IntelligenceTab({ workspace }: Props) {
                         ))}
                       {typeof run.queryParams === "object" && run.queryParams !== null && typeof (run.queryParams as { conceptId?: unknown }).conceptId === "string" && (
                         <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] uppercase text-primary">
-                          {workspace.concepts.find((concept) => concept.id === (run.queryParams as { conceptId?: string }).conceptId)?.name || "Concept-linked"}
+                          {resolveConceptName((run.queryParams as { conceptId?: string }).conceptId as string)}
                         </span>
                       )}
                     </div>

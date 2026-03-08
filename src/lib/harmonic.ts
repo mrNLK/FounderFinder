@@ -3,6 +3,8 @@ import type {
   AiFundHarmonicCompany,
   AiFundHarmonicIntelligenceSummary,
   AiFundHarmonicPersonProfile,
+  AiFundHarmonicSavedSearch,
+  AiFundIntelligenceRunRow,
   AiFundPersonRow,
 } from "@/types/ai-fund";
 
@@ -52,6 +54,23 @@ export interface HarmonicIntelligenceResponse {
     created_at: string;
   };
   companies: AiFundHarmonicCompany[];
+}
+
+export interface HarmonicDebugCompany {
+  id: string;
+  harmonicCompanyId: string;
+  name: string;
+  domain: string | null;
+  fetchedAt: string;
+  updatedAt: string;
+  rawPayload: Record<string, unknown>;
+}
+
+export interface HarmonicDebugSnapshot {
+  companyCount: number;
+  savedSearchCount: number;
+  recentCompanies: HarmonicDebugCompany[];
+  recentSavedSearches: AiFundHarmonicSavedSearch[];
 }
 
 interface FunctionErrorPayload {
@@ -109,8 +128,11 @@ async function extractFunctionErrorMessage(error: unknown): Promise<string> {
 export async function enrichPersonWithHarmonic(
   input: HarmonicPersonInput,
 ): Promise<HarmonicPersonResponse> {
-  const { data, error } = await supabase.functions.invoke("harmonic-person", {
-    body: input,
+  const { data, error } = await supabase.functions.invoke("aifund-settings", {
+    body: {
+      action: "harmonic_enrich_person",
+      ...input,
+    },
   });
 
   if (error) {
@@ -123,7 +145,7 @@ export async function enrichPersonWithHarmonic(
 export async function runHarmonicIntelligence(
   input: HarmonicIntelligenceInput,
 ): Promise<HarmonicIntelligenceResponse> {
-  const { data, error } = await supabase.functions.invoke("harmonic-intelligence", {
+  const { data, error } = await supabase.functions.invoke("aifund-intelligence", {
     body: input,
   });
 
@@ -131,5 +153,153 @@ export async function runHarmonicIntelligence(
     throw new Error(await extractFunctionErrorMessage(error));
   }
 
-  return data as HarmonicIntelligenceResponse;
+  const payload = data as {
+    run: AiFundIntelligenceRunRow;
+    resultsSummary: AiFundHarmonicIntelligenceSummary;
+  };
+
+  return {
+    run: {
+      id: payload.run.id,
+      user_id: payload.run.user_id,
+      provider: payload.run.provider,
+      query_params: payload.run.query_params,
+      status: payload.run.status,
+      results_count: payload.run.results_count,
+      results_summary: payload.run.results_summary as AiFundHarmonicIntelligenceSummary | null,
+      started_at: payload.run.started_at,
+      completed_at: payload.run.completed_at,
+      created_at: payload.run.created_at,
+    },
+    companies: payload.resultsSummary.companies,
+  };
+}
+
+export async function fetchHarmonicDebugSnapshot(): Promise<HarmonicDebugSnapshot> {
+  const [companiesResult, savedSearchesResult, companyCountResult, savedSearchCountResult] = await Promise.all([
+    supabase
+      .from("aifund_harmonic_companies")
+      .select("id, harmonic_company_id, name, domain, fetched_at, updated_at, raw_payload")
+      .order("updated_at", { ascending: false })
+      .limit(5),
+    supabase
+      .from("aifund_harmonic_saved_searches")
+      .select("*")
+      .order("updated_at", { ascending: false })
+      .limit(5),
+    supabase
+      .from("aifund_harmonic_companies")
+      .select("id", { count: "exact", head: true }),
+    supabase
+      .from("aifund_harmonic_saved_searches")
+      .select("id", { count: "exact", head: true }),
+  ]);
+
+  if (companiesResult.error) {
+    throw companiesResult.error;
+  }
+  if (savedSearchesResult.error) {
+    throw savedSearchesResult.error;
+  }
+  if (companyCountResult.error) {
+    throw companyCountResult.error;
+  }
+  if (savedSearchCountResult.error) {
+    throw savedSearchCountResult.error;
+  }
+
+  const recentCompanies = (companiesResult.data || []).map((row) => ({
+    id: row.id as string,
+    harmonicCompanyId: row.harmonic_company_id as string,
+    name: row.name as string,
+    domain: (row.domain as string | null) || null,
+    fetchedAt: row.fetched_at as string,
+    updatedAt: row.updated_at as string,
+    rawPayload: (row.raw_payload as Record<string, unknown>) || {},
+  }));
+
+  const recentSavedSearches = (savedSearchesResult.data || []).map((row) => ({
+    id: row.id as string,
+    userId: row.user_id as string,
+    conceptId: row.concept_id as string,
+    harmonicSavedSearchId: (row.harmonic_saved_search_id as string | null) || null,
+    queryText: row.query_text as string,
+    queryHash: row.query_hash as string,
+    status: row.status as string,
+    lastSyncedAt: (row.last_synced_at as string | null) || null,
+    lastRunId: (row.last_run_id as string | null) || null,
+    resultCount: row.result_count as number,
+    metadata: (row.metadata as Record<string, unknown>) || {},
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  }));
+
+  return {
+    companyCount: companyCountResult.count || 0,
+    savedSearchCount: savedSearchCountResult.count || 0,
+    recentCompanies,
+    recentSavedSearches,
+  };
+}
+
+export async function fetchHarmonicSavedSearches(): Promise<AiFundHarmonicSavedSearch[]> {
+  const { data, error } = await supabase
+    .from("aifund_harmonic_saved_searches")
+    .select("*")
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id as string,
+    userId: row.user_id as string,
+    conceptId: row.concept_id as string,
+    harmonicSavedSearchId: (row.harmonic_saved_search_id as string | null) || null,
+    queryText: row.query_text as string,
+    queryHash: row.query_hash as string,
+    status: row.status as string,
+    lastSyncedAt: (row.last_synced_at as string | null) || null,
+    lastRunId: (row.last_run_id as string | null) || null,
+    resultCount: row.result_count as number,
+    metadata: (row.metadata as Record<string, unknown>) || {},
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  }));
+}
+
+export async function updateHarmonicSavedSearchStatus(
+  savedSearchId: string,
+  status: string,
+): Promise<AiFundHarmonicSavedSearch> {
+  const { data, error } = await supabase
+    .from("aifund_harmonic_saved_searches")
+    .update({
+      status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", savedSearchId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    id: data.id as string,
+    userId: data.user_id as string,
+    conceptId: data.concept_id as string,
+    harmonicSavedSearchId: (data.harmonic_saved_search_id as string | null) || null,
+    queryText: data.query_text as string,
+    queryHash: data.query_hash as string,
+    status: data.status as string,
+    lastSyncedAt: (data.last_synced_at as string | null) || null,
+    lastRunId: (data.last_run_id as string | null) || null,
+    resultCount: data.result_count as number,
+    metadata: (data.metadata as Record<string, unknown>) || {},
+    createdAt: data.created_at as string,
+    updatedAt: data.updated_at as string,
+  };
 }
