@@ -30,27 +30,33 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!session) {
-      setAuthorized(null);
       return;
     }
 
-    checkMembership();
-  }, [session]);
+    let cancelled = false;
 
-  const checkMembership = async () => {
-    try {
-      const membership = await fetchActiveAppMembership("founderfinder");
-      setAuthorized(membership !== null);
-    } catch (error) {
-      console.error("Founder Finder membership check failed:", error);
-      setAuthorized(false);
-    }
-  };
+    void fetchActiveAppMembership("founderfinder")
+      .then((membership) => {
+        if (!cancelled) {
+          setAuthorized(membership !== null);
+        }
+      })
+      .catch((error) => {
+        console.error("Founder Finder membership check failed:", error);
+        if (!cancelled) {
+          setAuthorized(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        <Loader2 className="w-5 h-5 animate-spin text-primary" />
       </div>
     );
   }
@@ -62,7 +68,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   if (authorized === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        <Loader2 className="w-5 h-5 animate-spin text-primary" />
       </div>
     );
   }
@@ -81,18 +87,20 @@ function AccessDenied() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md space-y-6 text-center">
-        <div className="w-12 h-12 rounded-xl bg-destructive/10 flex items-center justify-center mx-auto">
-          <ShieldX className="w-6 h-6 text-destructive" />
+      <div className="w-full max-w-sm space-y-6 text-center">
+        <div className="w-11 h-11 rounded-2xl bg-red-50 flex items-center justify-center mx-auto">
+          <ShieldX className="w-5 h-5 text-destructive" />
         </div>
-        <h1 className="text-2xl font-semibold text-foreground">Access Restricted</h1>
-        <p className="text-muted-foreground text-sm">
-          Founder Finder is restricted to approved AI Fund members. Contact
-          mike@aifund.ai if you need access.
-        </p>
+        <div className="space-y-2">
+          <h1 className="text-lg font-semibold text-foreground">Access Restricted</h1>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            Founder Finder is restricted to approved AI Fund members.
+            Contact mike@aifund.ai for access.
+          </p>
+        </div>
         <button
           onClick={handleSignOut}
-          className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-sm hover:bg-secondary/80 transition-colors"
+          className="px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 transition-colors"
         >
           Sign Out
         </button>
@@ -127,47 +135,46 @@ function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md space-y-6">
-        <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto">
+      <div className="w-full max-w-sm space-y-8">
+        <div className="text-center space-y-3">
+          <div className="w-14 h-14 rounded-2xl bg-card shadow-sm border border-border flex items-center justify-center mx-auto">
             <Search className="w-6 h-6 text-primary" />
           </div>
-          <h1 className="text-2xl font-semibold text-foreground">Founder Finder</h1>
-          <p className="text-muted-foreground text-sm">
-            AI Fund Venture Creation Pipeline
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Private app. Approved members only.
-          </p>
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">Founder Finder</h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              AI Fund Venture Creation Pipeline
+            </p>
+          </div>
         </div>
 
         <form onSubmit={handleEmailAuth} className="space-y-4">
           {error && (
-            <div className="px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+            <div className="px-3 py-2.5 rounded-xl bg-red-50 border border-red-100 text-destructive text-sm">
               {error}
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@aifund.ai"
-              className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-primary/40 transition-all"
               required
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Your password"
-              className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-primary/40 transition-all"
               required
             />
           </div>
@@ -175,7 +182,7 @@ function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full px-4 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
           >
             {loading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -186,7 +193,7 @@ function LoginPage() {
           </button>
         </form>
         <p className="text-center text-xs text-muted-foreground">
-          No self-serve access. Contact mike@aifund.ai if you need an account.
+          Approved members only. Contact mike@aifund.ai for access.
         </p>
       </div>
     </div>
@@ -201,17 +208,17 @@ function AppShell() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+      <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
               <Search className="w-4 h-4 text-primary" />
             </div>
             <div>
               <h1 className="text-sm font-semibold text-foreground leading-tight">
                 Founder Finder
               </h1>
-              <p className="text-[10px] text-muted-foreground leading-tight">
+              <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
                 AI Fund Pipeline
               </p>
             </div>
@@ -219,7 +226,7 @@ function AppShell() {
 
           <button
             onClick={handleSignOut}
-            className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           >
             Sign Out
           </button>
@@ -227,7 +234,7 @@ function AppShell() {
       </header>
 
       {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 py-8">
         <AIFundDashboard />
       </main>
     </div>

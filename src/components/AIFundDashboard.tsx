@@ -83,25 +83,25 @@ export default function AIFundDashboard() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Error banner */}
       {workspace.error && (
-        <div className="px-4 py-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+        <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-destructive text-sm">
           {workspace.error}
         </div>
       )}
 
-      {/* Sub-navigation */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-thin">
+      {/* Tab navigation - pill style */}
+      <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-thin bg-card rounded-2xl border border-border p-1.5 shadow-sm">
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
                 isActive
-                  ? "bg-primary/10 text-primary"
+                  ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground hover:bg-secondary"
               }`}
             >

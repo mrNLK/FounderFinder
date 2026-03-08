@@ -1,4 +1,13 @@
-import { Activity, Briefcase, Users, Home, Zap, FileCheck } from "lucide-react";
+import {
+  Activity,
+  Briefcase,
+  Users,
+  Home,
+  Zap,
+  FileCheck,
+  TrendingUp,
+  ArrowRight,
+} from "lucide-react";
 import type { AiFundWorkspace } from "@/types/ai-fund";
 
 interface Props {
@@ -9,22 +18,43 @@ function StatCard({
   label,
   value,
   icon: Icon,
-  accent,
+  color,
 }: {
   label: string;
   value: number;
   icon: React.ElementType;
-  accent?: string;
+  color: string;
 }) {
+  const colorMap: Record<string, { bg: string; text: string; ring: string }> = {
+    emerald: { bg: "bg-emerald-50", text: "text-emerald-600", ring: "ring-emerald-100" },
+    blue: { bg: "bg-blue-50", text: "text-blue-600", ring: "ring-blue-100" },
+    violet: { bg: "bg-violet-50", text: "text-violet-600", ring: "ring-violet-100" },
+    amber: { bg: "bg-amber-50", text: "text-amber-600", ring: "ring-amber-100" },
+    rose: { bg: "bg-rose-50", text: "text-rose-600", ring: "ring-rose-100" },
+    cyan: { bg: "bg-cyan-50", text: "text-cyan-600", ring: "ring-cyan-100" },
+  };
+
+  const c = colorMap[color] || colorMap.emerald;
+
   return (
-    <div className="bg-card border border-border rounded-xl p-5 flex items-start gap-4">
-      <div className={`p-2.5 rounded-lg bg-primary/10 ${accent || "text-primary"}`}>
-        <Icon className="w-5 h-5" />
+    <div className="bg-card rounded-2xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group">
+      <div className="flex items-center justify-between mb-4">
+        <div className={`w-10 h-10 rounded-xl ${c.bg} ring-1 ${c.ring} flex items-center justify-center`}>
+          <Icon className={`w-5 h-5 ${c.text}`} />
+        </div>
+        <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
-      <div>
-        <p className="text-2xl font-semibold text-foreground">{value}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
-      </div>
+      <p className="text-3xl font-semibold text-foreground tracking-tight">{value}</p>
+      <p className="text-sm text-muted-foreground mt-1">{label}</p>
+    </div>
+  );
+}
+
+function HeroMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="text-center">
+      <p className="text-4xl font-bold text-foreground tracking-tight">{value}</p>
+      <p className="text-sm text-muted-foreground mt-1">{label}</p>
     </div>
   );
 }
@@ -34,48 +64,70 @@ export default function OverviewTab({ workspace }: Props) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="animate-pulse text-muted-foreground text-sm">Loading AI Fund data...</div>
+      <div className="flex items-center justify-center py-24">
+        <div className="flex items-center gap-3 text-muted-foreground text-sm">
+          <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+          Loading pipeline data...
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 max-w-5xl">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">AI Fund Overview</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Venture creation pipeline at a glance
-        </p>
+    <div className="space-y-10 max-w-6xl">
+      {/* Hero strip */}
+      <div className="bg-card rounded-2xl border border-border p-8 shadow-sm">
+        <div className="flex items-center gap-3 mb-6">
+          <TrendingUp className="w-5 h-5 text-primary" />
+          <h1 className="text-lg font-semibold text-foreground">Pipeline at a Glance</h1>
+        </div>
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-6">
+          <HeroMetric label="Concepts" value={stats.totalConcepts} />
+          <HeroMetric label="Active" value={stats.activeConcepts} />
+          <HeroMetric label="People" value={stats.totalPeople} />
+          <HeroMetric label="In Pipeline" value={stats.activePipeline} />
+          <HeroMetric label="Residencies" value={stats.activeResidencies} />
+          <HeroMetric label="Pending" value={stats.pendingDecisions} />
+        </div>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="Total Concepts" value={stats.totalConcepts} icon={Briefcase} />
-        <StatCard label="Active Concepts" value={stats.activeConcepts} icon={Zap} />
-        <StatCard label="Total People" value={stats.totalPeople} icon={Users} />
-        <StatCard label="Active Pipeline" value={stats.activePipeline} icon={Activity} />
-        <StatCard label="Active Residencies" value={stats.activeResidencies} icon={Home} />
-        <StatCard label="Pending Decisions" value={stats.pendingDecisions} icon={FileCheck} />
+      {/* Detailed stat cards */}
+      <div>
+        <h2 className="text-sm font-semibold text-foreground mb-4">Breakdown</h2>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <StatCard label="Total Concepts" value={stats.totalConcepts} icon={Briefcase} color="blue" />
+          <StatCard label="Active Concepts" value={stats.activeConcepts} icon={Zap} color="emerald" />
+          <StatCard label="Total People" value={stats.totalPeople} icon={Users} color="violet" />
+          <StatCard label="Active Pipeline" value={stats.activePipeline} icon={Activity} color="cyan" />
+          <StatCard label="Active Residencies" value={stats.activeResidencies} icon={Home} color="amber" />
+          <StatCard label="Pending Decisions" value={stats.pendingDecisions} icon={FileCheck} color="rose" />
+        </div>
       </div>
 
       {/* Recent activity */}
       <div>
-        <h2 className="text-sm font-semibold text-foreground mb-3">Recent Activity</h2>
+        <h2 className="text-sm font-semibold text-foreground mb-4">Recent Activity</h2>
         {stats.recentActivity.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center bg-card border border-border rounded-lg">
-            No activity yet. Start by adding a concept or person.
-          </p>
+          <div className="bg-card border border-border rounded-2xl p-10 text-center shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center mx-auto mb-3">
+              <Activity className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              No activity yet. Start by adding a concept or person.
+            </p>
+          </div>
         ) : (
-          <div className="space-y-2">
+          <div className="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
             {stats.recentActivity.map((event) => (
               <div
                 key={event.id}
-                className="flex items-center gap-3 px-4 py-3 bg-card border border-border rounded-lg"
+                className="flex items-center gap-4 px-5 py-4 hover:bg-secondary/50 transition-colors"
               >
-                <Activity className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                  <Activity className="w-3.5 h-3.5 text-muted-foreground" />
+                </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground truncate">
+                  <p className="text-sm text-foreground">
                     <span className="font-medium">{event.action}</span>{" "}
                     <span className="text-muted-foreground">on {event.entityType}</span>
                   </p>
