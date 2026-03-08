@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Mail, Send, MessageSquare } from "lucide-react";
+import { Mail, Send } from "lucide-react";
 import type { AiFundWorkspace, AiFundEngagement, EngagementChannel } from "@/types/ai-fund";
 import { fetchEngagements, createEngagement } from "@/lib/ai-fund";
 

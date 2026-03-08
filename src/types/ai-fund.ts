@@ -78,7 +78,11 @@ export type IntelligenceRunStatus =
   | "completed"
   | "failed";
 
-export type IntelligenceProvider = "exa" | "parallel" | "github" | "manual";
+export type IntelligenceProvider = "exa" | "parallel" | "github" | "harmonic" | "manual";
+
+export type IntegrationProvider = "harmonic" | "exa" | "github" | "parallel" | "anthropic";
+
+export type SourcingChannelProvider = "exa" | "parallel" | "github";
 
 // ---------------------------------------------------------------------------
 // Core Entities
@@ -116,8 +120,114 @@ export interface AiFundPerson {
   sourceChannel: string | null;
   tags: string[];
   metadata: Record<string, unknown> | null;
+  harmonicPersonId: string | null;
+  harmonicEnrichedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AiFundHarmonicFounderSummary {
+  name: string;
+  title: string | null;
+  linkedinUrl: string | null;
+}
+
+export interface AiFundHarmonicCompany {
+  harmonicCompanyId: string;
+  name: string;
+  domain: string | null;
+  linkedinUrl: string | null;
+  websiteUrl: string | null;
+  location: string | null;
+  fundingStage: string | null;
+  fundingTotal: number | null;
+  lastFundingDate: string | null;
+  lastFundingTotal: number | null;
+  headcount: number | null;
+  headcountGrowth30d: number | null;
+  headcountGrowth90d: number | null;
+  tags: string[];
+  founders: AiFundHarmonicFounderSummary[];
+  rawPayload: Record<string, unknown>;
+  fetchedAt: string;
+}
+
+export interface AiFundHarmonicPersonProfile {
+  harmonicPersonId: string | null;
+  fullName: string | null;
+  linkedinUrl: string | null;
+  currentRole: string | null;
+  currentCompany: string | null;
+  location: string | null;
+  bio: string | null;
+  education: Record<string, unknown>[];
+  experience: Record<string, unknown>[];
+  skills: string[];
+  socialLinks: Record<string, string>;
+  rawPayload: Record<string, unknown>;
+}
+
+export interface AiFundHarmonicSavedSearch {
+  id: string;
+  userId: string;
+  conceptId: string;
+  harmonicSavedSearchId: string | null;
+  queryText: string;
+  queryHash: string;
+  status: string;
+  lastSyncedAt: string | null;
+  lastRunId: string | null;
+  resultCount: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiFundHarmonicIntelligenceSummary {
+  source: "harmonic";
+  query: string;
+  conceptId: string | null;
+  fetchedAt: string;
+  companies: AiFundHarmonicCompany[];
+  error?: string;
+}
+
+export interface AiFundIntelligenceImportCandidate {
+  fullName: string;
+  email?: string | null;
+  linkedinUrl?: string | null;
+  githubUrl?: string | null;
+  websiteUrl?: string | null;
+  currentRole?: string | null;
+  currentCompany?: string | null;
+  location?: string | null;
+  bio?: string | null;
+  personType?: PersonType;
+  sourceChannel?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface AiFundProviderIntelligenceItem {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  snippet: string | null;
+  url: string | null;
+  publishedAt: string | null;
+  sourceChannel: string | null;
+  tags: string[];
+  importCandidate: AiFundIntelligenceImportCandidate | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AiFundProviderIntelligenceSummary {
+  source: "exa" | "parallel" | "github";
+  query: string;
+  conceptId: string | null;
+  fetchedAt: string;
+  channelIds: string[];
+  items: AiFundProviderIntelligenceItem[];
+  error?: string;
 }
 
 export interface AiFundEvaluationScore {
@@ -220,10 +330,57 @@ export interface AiFundIntelligenceRun {
   queryParams: Record<string, unknown>;
   status: IntelligenceRunStatus;
   resultsCount: number;
-  resultsSummary: Record<string, unknown> | null;
+  resultsSummary:
+    | AiFundHarmonicIntelligenceSummary
+    | AiFundProviderIntelligenceSummary
+    | Record<string, unknown>
+    | null;
   startedAt: string;
   completedAt: string | null;
   createdAt: string;
+}
+
+export interface AiFundIntegrationConfig {
+  provider: IntegrationProvider;
+  label: string;
+  configured: boolean;
+  source: "saved" | "project_env" | "missing";
+  maskedKey: string | null;
+  baseUrl?: string | null;
+  model?: string | null;
+}
+
+export interface AiFundSourcingChannel {
+  id: string;
+  label: string;
+  provider: SourcingChannelProvider;
+  enabled: boolean;
+  description: string;
+  queryTemplate: string;
+  domains: string[];
+}
+
+export interface AiFundEvaluationCriterion {
+  id: "aiExcellence" | "technicalAbility" | "productInstinct" | "leadershipPotential";
+  label: string;
+  description: string;
+  weight: number;
+}
+
+export interface AiFundAppSettings {
+  integrations: Record<IntegrationProvider, AiFundIntegrationConfig>;
+  sourcingChannels: AiFundSourcingChannel[];
+  evaluationCriteria: AiFundEvaluationCriterion[];
+  updatedAt: string | null;
+}
+
+export interface AiFundSettingsUpdate {
+  integrations?: Partial<Record<IntegrationProvider, {
+    apiKey?: string | null;
+    baseUrl?: string | null;
+    model?: string | null;
+  }>>;
+  sourcingChannels?: AiFundSourcingChannel[];
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +430,8 @@ export interface AiFundWorkspace {
   people: AiFundPerson[];
   assignments: AiFundAssignment[];
   stats: AiFundDashboardStats;
+  settings: AiFundAppSettings;
+  settingsLoading: boolean;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -280,8 +439,10 @@ export interface AiFundWorkspace {
   updateConcept: (id: string, updates: Partial<AiFundConcept>) => Promise<void>;
   addPerson: (person: Partial<AiFundPerson>) => Promise<AiFundPerson | null>;
   updatePerson: (id: string, updates: Partial<AiFundPerson>) => Promise<void>;
+  updateSettings: (updates: AiFundSettingsUpdate) => Promise<void>;
+  refreshPersonEnrichment: (personId: string) => Promise<void>;
   addAssignment: (assignment: Partial<AiFundAssignment>) => Promise<void>;
-  scoreCandidate: (score: Partial<AiFundEvaluationScore>) => Promise<void>;
+  scoreCandidate: (score: Partial<AiFundEvaluationScore>) => Promise<AiFundEvaluationScore | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +481,8 @@ export interface AiFundPersonRow {
   source_channel: string | null;
   tags: string[];
   metadata: Record<string, unknown> | null;
+  harmonic_person_id: string | null;
+  harmonic_enriched_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -469,6 +632,8 @@ export function personFromRow(row: AiFundPersonRow): AiFundPerson {
     sourceChannel: row.source_channel,
     tags: row.tags,
     metadata: row.metadata,
+    harmonicPersonId: row.harmonic_person_id,
+    harmonicEnrichedAt: row.harmonic_enriched_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

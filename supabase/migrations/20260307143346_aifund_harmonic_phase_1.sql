@@ -2,6 +2,12 @@ alter table public.aifund_people
   add column if not exists harmonic_person_id text,
   add column if not exists harmonic_enriched_at timestamptz;
 
+alter table public.aifund_external_profiles
+  add column if not exists platform text,
+  add column if not exists profile_url text,
+  add column if not exists profile_data jsonb,
+  add column if not exists fetched_at timestamptz default now();
+
 create table if not exists public.aifund_harmonic_companies (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,

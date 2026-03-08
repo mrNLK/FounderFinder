@@ -18,7 +18,6 @@ import {
   type AiFundIntelligenceRun,
   type AiFundHarmonicIntelligenceSummary,
   type AiFundEvidence,
-  type AiFundExternalProfile,
   type AiFundDashboardStats,
   type PersonWithScores,
   type ConceptWithAssignments,

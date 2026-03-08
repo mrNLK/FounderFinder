@@ -34,7 +34,6 @@ export default function MatchingBoardTab({ workspace }: Props) {
   }
 
   // Build assignment view: concept -> assigned people
-  const conceptMap = new Map(concepts.map((c) => [c.id, c]));
   const personMap = new Map(people.map((p) => [p.id, p]));
 
   const assignmentsByConceptId = assignments.reduce(

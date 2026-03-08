@@ -26,7 +26,13 @@ import {
   createAssignment,
   createScore,
   fetchDashboardStats,
+  logActivity,
 } from "@/lib/ai-fund";
+import {
+  createDefaultAiFundSettings,
+  fetchAiFundSettings,
+  updateAiFundSettings,
+} from "@/lib/aifund-settings";
 import { enrichPersonWithHarmonic } from "@/lib/harmonic";
 
 export function useAiFundWorkspace(): AiFundWorkspace {
@@ -42,32 +48,68 @@ export function useAiFundWorkspace(): AiFundWorkspace {
     pendingDecisions: 0,
     recentActivity: [],
   });
+  const [settings, setSettings] = useState(createDefaultAiFundSettings());
+  const [settingsLoading, setSettingsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [c, p, a, s] = await Promise.all([
+    setLoading(true);
+    setError(null);
+
+    const [conceptsResult, peopleResult, assignmentsResult, statsResult, settingsResult] =
+      await Promise.allSettled([
         fetchConcepts(),
         fetchPeople(),
         fetchAssignments(),
         fetchDashboardStats(),
+        fetchAiFundSettings(),
       ]);
-      setConcepts(c);
-      setPeople(p);
-      setAssignments(a);
-      setStats(s);
-    } catch (err: unknown) {
-      const msg = err instanceof Error
-        ? err.message
-        : (err as { message?: string })?.message || "Failed to load AI Fund data";
-      setError(msg);
-      console.error("useAiFundWorkspace refresh error:", err);
-    } finally {
-      setLoading(false);
+
+    const failures: string[] = [];
+
+    if (conceptsResult.status === "fulfilled") {
+      setConcepts(conceptsResult.value);
+    } else {
+      failures.push("concepts");
+      console.error("Failed to load concepts:", conceptsResult.reason);
     }
+
+    if (peopleResult.status === "fulfilled") {
+      setPeople(peopleResult.value);
+    } else {
+      failures.push("people");
+      console.error("Failed to load people:", peopleResult.reason);
+    }
+
+    if (assignmentsResult.status === "fulfilled") {
+      setAssignments(assignmentsResult.value);
+    } else {
+      failures.push("assignments");
+      console.error("Failed to load assignments:", assignmentsResult.reason);
+    }
+
+    if (statsResult.status === "fulfilled") {
+      setStats(statsResult.value);
+    } else {
+      failures.push("overview");
+      console.error("Failed to load dashboard stats:", statsResult.reason);
+    }
+
+    if (settingsResult.status === "fulfilled") {
+      setSettings(settingsResult.value);
+    } else {
+      console.warn("Failed to load AI Fund settings:", settingsResult.reason);
+      setSettings(createDefaultAiFundSettings());
+    }
+
+    setError(
+      failures.length > 0
+        ? `Failed to load ${failures.join(", ")} data`
+        : null,
+    );
+    setLoading(false);
+    setSettingsLoading(false);
   }, []);
 
   const mergePerson = useCallback((row: ReturnType<typeof personFromRow>): void => {
@@ -118,7 +160,13 @@ export function useAiFundWorkspace(): AiFundWorkspace {
   );
 
   useEffect(() => {
-    refresh();
+    const timer = window.setTimeout(() => {
+      void refresh();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [refresh]);
 
   const addConcept = useCallback(
@@ -126,6 +174,9 @@ export function useAiFundWorkspace(): AiFundWorkspace {
       try {
         const concept = await createConcept(fields);
         setConcepts((prev) => [concept, ...prev]);
+        void logActivity("concept", concept.id, "created_concept", {
+          name: concept.name,
+        });
         return concept;
       } catch (err) {
         console.error("addConcept error:", err);
@@ -150,6 +201,10 @@ export function useAiFundWorkspace(): AiFundWorkspace {
       try {
         const person = await createPerson(fields);
         setPeople((prev) => [person, ...prev]);
+        void logActivity("person", person.id, "created_person", {
+          name: person.fullName,
+          sourceChannel: person.sourceChannel,
+        });
         if (person.linkedinUrl) {
           await triggerHarmonicEnrichment(person.id, person);
         }
@@ -190,8 +245,21 @@ export function useAiFundWorkspace(): AiFundWorkspace {
     async (fields: Partial<AiFundAssignment>): Promise<void> => {
       const assignment = await createAssignment(fields);
       setAssignments((prev) => [assignment, ...prev]);
+      void logActivity("assignment", assignment.id, "created_assignment", {
+        conceptId: assignment.conceptId,
+        personId: assignment.personId,
+        role: assignment.role,
+      });
     },
     []
+  );
+
+  const updateSettingsHandler = useCallback(
+    async (updates: Parameters<typeof updateAiFundSettings>[0]): Promise<void> => {
+      const nextSettings = await updateAiFundSettings(updates);
+      setSettings(nextSettings);
+    },
+    [],
   );
 
   const refreshPersonEnrichmentHandler = useCallback(
@@ -207,8 +275,19 @@ export function useAiFundWorkspace(): AiFundWorkspace {
   );
 
   const scoreCandidateHandler = useCallback(
-    async (fields: Partial<AiFundEvaluationScore>): Promise<void> => {
-      await createScore(fields);
+    async (fields: Partial<AiFundEvaluationScore>): Promise<AiFundEvaluationScore | null> => {
+      try {
+        const score = await createScore(fields);
+        if (score.personId) {
+          void logActivity("person", score.personId, "scored_candidate", {
+            compositeScore: score.compositeScore,
+          });
+        }
+        return score;
+      } catch (err) {
+        console.error("scoreCandidate error:", err);
+        return null;
+      }
     },
     []
   );
@@ -218,6 +297,8 @@ export function useAiFundWorkspace(): AiFundWorkspace {
     people,
     assignments,
     stats,
+    settings,
+    settingsLoading,
     loading,
     error,
     refresh,
@@ -225,6 +306,7 @@ export function useAiFundWorkspace(): AiFundWorkspace {
     updateConcept: updateConceptHandler,
     addPerson,
     updatePerson: updatePersonHandler,
+    updateSettings: updateSettingsHandler,
     refreshPersonEnrichment: refreshPersonEnrichmentHandler,
     addAssignment: addAssignmentHandler,
     scoreCandidate: scoreCandidateHandler,

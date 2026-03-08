@@ -93,11 +93,12 @@ export default function ResidencyTrackerTab({ workspace }: Props) {
 }
 
 function ResidencyCard({ residency }: { residency: AiFundResidency }) {
+  const [currentTime] = useState<number>(() => Date.now());
   const start = new Date(residency.startDate);
   const end = residency.endDate ? new Date(residency.endDate) : null;
   const weeks = end
     ? Math.ceil((end.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000))
-    : Math.ceil((Date.now() - start.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    : Math.ceil((currentTime - start.getTime()) / (7 * 24 * 60 * 60 * 1000));
 
   return (
     <div className="flex items-center gap-4 px-4 py-3 bg-card border border-border rounded-lg">

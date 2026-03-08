@@ -54,21 +54,26 @@ interface HarmonicEnv {
   baseUrl: string;
 }
 
+export interface HarmonicEnvOverride {
+  apiKey?: string | null;
+  baseUrl?: string | null;
+}
+
 interface HarmonicSearchResponse {
   results?: unknown[];
   companies?: unknown[];
   urns?: unknown[];
 }
 
-function getHarmonicEnv(): HarmonicEnv {
-  const apiKey = Deno.env.get("HARMONIC_API_KEY");
+function getHarmonicEnv(override?: HarmonicEnvOverride): HarmonicEnv {
+  const apiKey = override?.apiKey || Deno.env.get("HARMONIC_API_KEY");
   if (!apiKey) {
     throw new Error("Missing HARMONIC_API_KEY");
   }
 
   return {
     apiKey,
-    baseUrl: Deno.env.get("HARMONIC_BASE_URL") || DEFAULT_HARMONIC_BASE_URL,
+    baseUrl: override?.baseUrl || Deno.env.get("HARMONIC_BASE_URL") || DEFAULT_HARMONIC_BASE_URL,
   };
 }
 
@@ -138,8 +143,9 @@ function toRecordArray(value: unknown): Record<string, unknown>[] {
 export async function harmonicFetch<T>(
   path: string,
   init?: RequestInit,
+  override?: HarmonicEnvOverride,
 ): Promise<T> {
-  const env = getHarmonicEnv();
+  const env = getHarmonicEnv(override);
   const headers = new Headers(init?.headers);
   headers.set("Authorization", `Bearer ${env.apiKey}`);
   headers.set("Accept", "application/json");
@@ -166,14 +172,17 @@ export async function harmonicFetch<T>(
   return await response.json() as T;
 }
 
-export async function enrichPersonByLinkedIn(linkedinUrl: string): Promise<Record<string, unknown>> {
+export async function enrichPersonByLinkedIn(
+  linkedinUrl: string,
+  override?: HarmonicEnvOverride,
+): Promise<Record<string, unknown>> {
   const params = new URLSearchParams({
     linkedin_url: normalizeLinkedInUrl(linkedinUrl) || linkedinUrl,
   });
 
   return await harmonicFetch<Record<string, unknown>>(`/persons?${params.toString()}`, {
     method: "POST",
-  });
+  }, override);
 }
 
 function normalizeSearchResults(response: HarmonicSearchResponse): HarmonicSearchCompanyResult[] {
@@ -206,6 +215,7 @@ function normalizeSearchResults(response: HarmonicSearchResponse): HarmonicSearc
 export async function searchCompaniesByNaturalLanguage(
   query: string,
   limit: number,
+  override?: HarmonicEnvOverride,
 ): Promise<HarmonicSearchCompanyResult[]> {
   const payload = {
     query,
@@ -216,7 +226,7 @@ export async function searchCompaniesByNaturalLanguage(
     const response = await harmonicFetch<HarmonicSearchResponse>("/search/search_agent", {
       method: "POST",
       body: JSON.stringify(payload),
-    });
+    }, override);
     const results = normalizeSearchResults(response);
     if (results.length > 0) {
       return results;
@@ -235,7 +245,7 @@ export async function searchCompaniesByNaturalLanguage(
     });
     const response = await harmonicFetch<HarmonicSearchResponse>(`/search/search_agent?${params.toString()}`, {
       method: "GET",
-    });
+    }, override);
     const results = normalizeSearchResults(response);
     if (results.length > 0) {
       return results;
@@ -250,7 +260,7 @@ export async function searchCompaniesByNaturalLanguage(
   const fallbackResponse = await harmonicFetch<HarmonicSearchResponse>("/search/companies_by_keywords", {
     method: "POST",
     body: JSON.stringify(payload),
-  });
+  }, override);
 
   return normalizeSearchResults(fallbackResponse);
 }
@@ -258,6 +268,7 @@ export async function searchCompaniesByNaturalLanguage(
 export async function getCompaniesByUrns(
   urns: string[],
   includeFields: string[],
+  override?: HarmonicEnvOverride,
 ): Promise<Record<string, unknown>[]> {
   if (urns.length === 0) return [];
 
@@ -270,6 +281,7 @@ export async function getCompaniesByUrns(
     response = await harmonicFetch<Record<string, unknown> | Record<string, unknown>[]>(
       `/companies?${params.toString()}`,
       { method: "GET" },
+      override,
     );
   } catch (error) {
     const status = (error as Error & { status?: number }).status;
@@ -286,6 +298,7 @@ export async function getCompaniesByUrns(
           include_fields: includeFields,
         }),
       },
+      override,
     );
   }
 

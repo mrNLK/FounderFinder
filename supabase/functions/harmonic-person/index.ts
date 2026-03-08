@@ -8,6 +8,11 @@ import {
   normalizeHarmonicPerson,
   normalizeLinkedInUrl,
 } from "../_shared/harmonic.ts";
+import {
+  getHarmonicBaseUrl,
+  getProviderApiKey,
+  getUserSettingsRow,
+} from "../_shared/aifund-settings.ts";
 import { authenticateAiFundUser, AuthGuardError } from "../_shared/auth-guard.ts";
 
 interface HarmonicPersonRequest {
@@ -161,6 +166,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const { userId, userClient, serviceClient } = await authenticateAiFundUser(request);
     const { person } = await getOwnedPerson(userClient, userId, body.personId);
     const linkedinUrl = normalizeLinkedInUrl(body.linkedinUrl || person.linkedin_url);
+    const settingsRow = await getUserSettingsRow(serviceClient, userId);
+    const harmonicOverride = {
+      apiKey: getProviderApiKey(settingsRow, "harmonic"),
+      baseUrl: getHarmonicBaseUrl(settingsRow),
+    };
 
     if (!linkedinUrl) {
       return errorJson("Missing LinkedIn URL", "missing_linkedin_url", 400);
@@ -168,7 +178,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
     let personRaw: Record<string, unknown>;
     try {
-      personRaw = await enrichPersonByLinkedIn(linkedinUrl);
+      personRaw = await enrichPersonByLinkedIn(linkedinUrl, harmonicOverride);
     } catch (error) {
       const status = (error as Error & { status?: number }).status;
       if (status === 404) {
@@ -209,6 +219,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
           const companies = await getCompaniesByUrns(
             [companyUrn],
             ["id", "entity_urn", "name", "website_url", "website_domain", "headcount", "funding", "socials", "location", "founders", "tags"],
+            harmonicOverride,
           );
           const rawCompany = companies[0];
           if (rawCompany) {

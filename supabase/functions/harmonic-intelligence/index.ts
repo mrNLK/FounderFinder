@@ -27,14 +27,6 @@ interface FunctionErrorBody {
   };
 }
 
-function getEnv(name: string): string {
-  const value = Deno.env.get(name);
-  if (!value) {
-    throw new Error(`Missing ${name}`);
-  }
-  return value;
-}
-
 function json(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     ...init,
