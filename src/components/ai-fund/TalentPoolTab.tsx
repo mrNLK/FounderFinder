@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Filter, Plus, RefreshCw } from "lucide-react";
+import { ExternalLink, Filter, Plus, RefreshCw, Upload } from "lucide-react";
 import type {
+  AiFundAtsImportPreview,
+  AiFundAtsImportRow,
   AiFundEvaluationCriterion,
   AiFundPerson,
   AiFundWorkspace,
@@ -8,7 +10,8 @@ import type {
   ProcessStage,
 } from "@/types/ai-fund";
 import { computeCompositeScore, scoreColor, scoreLabel } from "@/lib/aifund-scoring";
-import { fetchScoresForPerson } from "@/lib/ai-fund";
+import { fetchScoresForPerson, importTalentPoolCandidates } from "@/lib/ai-fund";
+import { buildAtsImportPreview } from "@/lib/talent-pool-import";
 import PersonDetail from "@/components/ai-fund/PersonDetail";
 
 interface Props {
@@ -68,12 +71,17 @@ function sourceChannelLabel(workspace: AiFundWorkspace, value: string | null): s
     return "Harmonic Founder Search";
   }
 
+  if (value === "lever_applicant_import" || value === "ats_applicant_import") {
+    return "Lever Applicant Import";
+  }
+
   return workspace.settings.sourcingChannels.find((channel) => channel.id === value)?.label || value;
 }
 
 export default function TalentPoolTab({ workspace }: Props) {
-  const { people, loading, addPerson, refreshPersonEnrichment } = workspace;
+  const { people, loading, addPerson, refresh, refreshPersonEnrichment } = workspace;
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<PersonType | "all">("all");
   const [filterStage, setFilterStage] = useState<ProcessStage | "all">("all");
@@ -83,6 +91,12 @@ export default function TalentPoolTab({ workspace }: Props) {
   const [scoreDraft, setScoreDraft] = useState<ScoreDraft>(EMPTY_SCORE_DRAFT);
   const [scoreError, setScoreError] = useState<string | null>(null);
   const [scoreSubmitting, setScoreSubmitting] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<AiFundAtsImportPreview | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSummary, setImportSummary] = useState<string | null>(null);
+  const [previewBuilding, setPreviewBuilding] = useState(false);
+  const [importSubmitting, setImportSubmitting] = useState(false);
 
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
@@ -223,6 +237,81 @@ export default function TalentPoolTab({ workspace }: Props) {
     }
   };
 
+  const resetImportState = (): void => {
+    setImportFile(null);
+    setImportPreview(null);
+    setImportError(null);
+    setImportSummary(null);
+    setPreviewBuilding(false);
+    setImportSubmitting(false);
+  };
+
+  const handleBuildImportPreview = async (): Promise<void> => {
+    if (!importFile) {
+      return;
+    }
+
+    setPreviewBuilding(true);
+    setImportError(null);
+    setImportSummary(null);
+
+    try {
+      const preview = await buildAtsImportPreview(importFile, people);
+      setImportPreview(preview);
+    } catch (error: unknown) {
+      setImportPreview(null);
+      setImportError(error instanceof Error ? error.message : "Failed to parse ATS file");
+    } finally {
+      setPreviewBuilding(false);
+    }
+  };
+
+  const handleImportCandidates = async (): Promise<void> => {
+    if (!importPreview) {
+      return;
+    }
+
+    const rowsToCreate = importPreview.rows.filter((row: AiFundAtsImportRow) => row.decision === "create");
+    if (rowsToCreate.length === 0) {
+      setImportSummary("No new candidates to import.");
+      return;
+    }
+
+    setImportSubmitting(true);
+    setImportError(null);
+    setImportSummary(null);
+
+    try {
+      const summary = await importTalentPoolCandidates({
+        rows: importPreview.rows.map((row: AiFundAtsImportRow) => ({
+          localId: row.localId,
+          fullName: row.fullName,
+          email: row.email,
+          currentRole: row.currentRole,
+          currentCompany: row.currentCompany,
+          location: row.location,
+          personType: row.personType,
+          processStage: row.processStage,
+          sourceChannel: row.sourceChannel,
+          decision: row.decision,
+          metadata: row.metadata,
+        })),
+      });
+
+      await refresh();
+      setImportSummary(
+        `Imported ${summary.createdCount} candidates. Skipped ${summary.skippedCount}, duplicates ${summary.duplicateCount}, archived ${summary.archivedCount}.`,
+      );
+      setShowImport(false);
+      setImportFile(null);
+      setImportPreview(null);
+    } catch (error: unknown) {
+      setImportError(error instanceof Error ? error.message : "Failed to import ATS candidates");
+    } finally {
+      setImportSubmitting(false);
+    }
+  };
+
   const filtered = people.filter((person) => {
     if (filterType !== "all" && person.personType !== filterType) {
       return false;
@@ -256,14 +345,49 @@ export default function TalentPoolTab({ workspace }: Props) {
             {people.length} candidate{people.length !== 1 ? "s" : ""} tracked
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          Add Person
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setShowImport(!showImport);
+              if (showForm) {
+                setShowForm(false);
+              }
+              if (showImport) {
+                resetImportState();
+              }
+            }}
+            className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary/80"
+          >
+            <Upload className="h-4 w-4" />
+            Import Lever CSV
+          </button>
+          <button
+            onClick={() => {
+              setShowForm(!showForm);
+              if (showImport) {
+                setShowImport(false);
+                resetImportState();
+              }
+            }}
+            className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            Add Person
+          </button>
+        </div>
       </div>
+
+      {importSummary && (
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+          {importSummary}
+        </div>
+      )}
+
+      {importError && (
+        <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {importError}
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         <Filter className="h-4 w-4 text-muted-foreground" />
@@ -365,6 +489,164 @@ export default function TalentPoolTab({ workspace }: Props) {
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="space-y-4 rounded-xl border border-border bg-card p-5">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Bulk Import ATS Applicants</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Upload the Lever CSV or spreadsheet export and import unique applicants into the Talent Pool. Best source: Opportunity Summary.csv.
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">CSV or spreadsheet</span>
+              <input
+                type="file"
+                accept=".csv,.xlsx"
+                onChange={(event) => {
+                  setImportFile(event.target.files?.[0] || null);
+                  setImportPreview(null);
+                  setImportError(null);
+                }}
+                className="block w-full text-sm text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-sm file:font-medium"
+              />
+            </label>
+            <button
+              onClick={() => void handleBuildImportPreview()}
+              disabled={!importFile || previewBuilding}
+              className="self-end rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {previewBuilding ? "Building preview..." : "Build Preview"}
+            </button>
+            <button
+              onClick={() => {
+                setShowImport(false);
+                resetImportState();
+              }}
+              className="self-end rounded-lg bg-secondary px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </div>
+
+          {importPreview && (
+            <div className="space-y-4 border-t border-border pt-4">
+              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                <span>{importPreview.importSchemaLabel} detected</span>
+                {importPreview.isPreferredLeverExport && (
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">
+                    Preferred Lever export
+                  </span>
+                )}
+                <span>{importPreview.rowCount} applicants in file</span>
+                <span>{importPreview.createCount} new</span>
+                <span>{importPreview.skipCount} duplicates</span>
+                <span>{importPreview.archivedCount} archived</span>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                  <p className="text-xs font-medium text-foreground">Top postings</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {importPreview.postings.map((entry) => (
+                      <span
+                        key={`posting:${entry.label}`}
+                        className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"
+                      >
+                        {entry.label} ({entry.count})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                  <p className="text-xs font-medium text-foreground">Top departments</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {importPreview.departments.map((entry) => (
+                      <span
+                        key={`department:${entry.label}`}
+                        className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"
+                      >
+                        {entry.label} ({entry.count})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 max-h-[28rem] overflow-y-auto pr-1">
+                {importPreview.rows.slice(0, 30).map((row: AiFundAtsImportRow) => (
+                  <div key={row.localId} className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">{row.fullName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {[row.currentRole, row.currentCompany, row.location].filter(Boolean).join(" • ") || "No role or company info"}
+                        </p>
+                        {row.duplicateReason && (
+                          <p className="mt-2 text-[11px] text-amber-300">{row.duplicateReason}</p>
+                        )}
+                        {row.matches.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {row.matches.map((match) => (
+                              <span
+                                key={`${row.localId}:${match.personId}`}
+                                className="rounded-full border border-amber-500/20 px-2 py-0.5 text-[11px] text-amber-100"
+                              >
+                                {match.fullName}{match.currentCompany ? ` @ ${match.currentCompany}` : ""}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                        <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+                          {row.personType}
+                        </span>
+                        <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+                          {PROCESS_STAGE_LABELS[row.processStage]}
+                        </span>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[10px] uppercase ${
+                            row.decision === "create"
+                              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                              : "border-amber-500/20 bg-amber-500/10 text-amber-200"
+                          }`}
+                        >
+                          {row.decision}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {importPreview.rowCount > 30 && (
+                <p className="text-xs text-muted-foreground">
+                  Showing the first 30 preview rows.
+                </p>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => void handleImportCandidates()}
+                  disabled={importPreview.createCount === 0 || importSubmitting}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {importSubmitting ? "Importing..." : `Import ${importPreview.createCount} Candidates`}
+                </button>
+                <button
+                  onClick={resetImportState}
+                  className="rounded-lg bg-secondary px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Clear Preview
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -492,8 +774,8 @@ export default function TalentPoolTab({ workspace }: Props) {
                           </label>
                           <input
                             type="number"
-                            min="0"
-                            max="5"
+                            min="1"
+                            max="4"
                             step="0.5"
                             value={scoreDraft[criterion.id]}
                             onChange={(event) => setScoreDraft((prev) => ({

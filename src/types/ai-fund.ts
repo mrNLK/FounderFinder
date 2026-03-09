@@ -78,6 +78,10 @@ export type IntelligenceRunStatus =
   | "completed"
   | "failed";
 
+export type AiFundConceptArchetype = "fir" | "ve" | "both" | "unclear";
+
+export type AiFundConceptCoBuildStatus = "yes" | "no" | "unclear";
+
 export type IntelligenceProvider = "exa" | "parallel" | "github" | "harmonic" | "manual";
 
 export type IntegrationProvider = "harmonic" | "exa" | "github" | "parallel" | "anthropic";
@@ -100,6 +104,185 @@ export interface AiFundConcept {
   metadata: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AiFundConceptProfile {
+  generalBreakdown: string | null;
+  idealArchetype: AiFundConceptArchetype;
+  archetypeReason: string | null;
+  coBuildStatus: AiFundConceptCoBuildStatus;
+  lpPartner: string | null;
+  tags: string[];
+}
+
+export interface AiFundImportBatch {
+  id: string;
+  userId: string;
+  canonicalFileName: string;
+  canonicalStoragePath: string | null;
+  markdownFileName: string | null;
+  markdownStoragePath: string | null;
+  status: string;
+  summary: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  uploadedFiles: AiFundImportBatchFile[];
+  matchedAttachments: BulkConceptImportAttachmentPreview[];
+  unmatchedAttachments: AiFundImportBatchAttachment[];
+  dismissedAttachments: AiFundImportBatchAttachment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiFundImportBatchFile {
+  fileName: string;
+  storagePath: string;
+  sourceType: string;
+  category: "canonical" | "attachment" | "markdown";
+}
+
+export interface AiFundImportBatchAttachment extends BulkConceptImportAttachmentPreview {
+  storagePath: string | null;
+  batchId: string;
+}
+
+export interface AiFundSourceTextReindexResult {
+  conceptId: string | null;
+  scannedCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  completedAt: string;
+  errors: string[];
+}
+
+export interface AiFundConceptSource {
+  id: string;
+  userId: string;
+  conceptId: string;
+  importBatchId: string | null;
+  sourceType: string;
+  sourceFile: string | null;
+  storagePath: string | null;
+  sourceSection: string | null;
+  submitter: string | null;
+  rawText: string | null;
+  comments: string | null;
+  originalLanguage: string | null;
+  englishSummary: string | null;
+  statusRaw: string | null;
+  sectorRaw: string | null;
+  thesisRaw: string | null;
+  dedupeHint: string | null;
+  extractedFields: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BulkConceptImportMatch {
+  conceptId: string;
+  conceptName: string;
+  lpSource: string | null;
+  matchType: "exact" | "fuzzy";
+}
+
+export interface BulkConceptImportSourceEntry {
+  sourceType: string;
+  sourceFile: string | null;
+  storagePath: string | null;
+  sourceSection: string | null;
+  submitter: string | null;
+  rawText: string | null;
+  comments: string | null;
+  originalLanguage: string | null;
+  englishSummary: string | null;
+  statusRaw: string | null;
+  sectorRaw: string | null;
+  thesisRaw: string | null;
+  dedupeHint: string | null;
+  extractedFields: Record<string, unknown>;
+}
+
+export interface BulkConceptImportAttachmentPreview {
+  fileName: string;
+  relativePath: string;
+  sourceType: string;
+  lpSource: string | null;
+  matchedConceptName: string | null;
+  matchReason: string | null;
+  matchScore: number | null;
+}
+
+export interface BulkConceptImportRow {
+  localId: string;
+  conceptName: string;
+  lpSource: string | null;
+  thesis: string | null;
+  sector: string | null;
+  notes: string | null;
+  statusRaw: string | null;
+  decision: "create" | "merge" | "skip";
+  targetConceptId: string | null;
+  matches: BulkConceptImportMatch[];
+  sourceEntries: BulkConceptImportSourceEntry[];
+}
+
+export interface BulkConceptImportPreview {
+  canonicalFileName: string;
+  defaultLpSource: string | null;
+  sheetName: string | null;
+  rowCount: number;
+  rows: BulkConceptImportRow[];
+  matchedAttachments: BulkConceptImportAttachmentPreview[];
+  unmatchedAttachments: BulkConceptImportAttachmentPreview[];
+}
+
+export interface AiFundAtsImportMatch {
+  personId: string;
+  fullName: string;
+  currentCompany: string | null;
+  reason: string;
+}
+
+export interface AiFundAtsImportCount {
+  label: string;
+  count: number;
+}
+
+export interface AiFundAtsImportRow {
+  localId: string;
+  fullName: string;
+  email: string | null;
+  currentRole: string | null;
+  currentCompany: string | null;
+  location: string | null;
+  personType: PersonType;
+  processStage: ProcessStage;
+  sourceChannel: string;
+  decision: "create" | "skip";
+  duplicateReason: string | null;
+  matches: AiFundAtsImportMatch[];
+  metadata: Record<string, unknown>;
+}
+
+export interface AiFundAtsImportPreview {
+  fileName: string;
+  importSchema: "candidates_by_origin" | "opportunity_summary";
+  importSchemaLabel: string;
+  isPreferredLeverExport: boolean;
+  rowCount: number;
+  createCount: number;
+  skipCount: number;
+  archivedCount: number;
+  rows: AiFundAtsImportRow[];
+  postings: AiFundAtsImportCount[];
+  departments: AiFundAtsImportCount[];
+}
+
+export interface AiFundAtsImportResult {
+  createdCount: number;
+  skippedCount: number;
+  duplicateCount: number;
+  archivedCount: number;
 }
 
 export interface AiFundPerson {
@@ -396,10 +579,10 @@ export interface AiFundIntegrationTestResult {
 // ---------------------------------------------------------------------------
 
 export const SCORING_WEIGHTS = {
-  aiExcellence: 0.4,
-  technicalAbility: 0.25,
-  productInstinct: 0.2,
-  leadershipPotential: 0.15,
+  aiExcellence: 0.40,
+  technicalAbility: 0.30,
+  productInstinct: 0.18,
+  leadershipPotential: 0.12,
 } as const;
 
 export type ScoringDimension = keyof typeof SCORING_WEIGHTS;
@@ -611,6 +794,43 @@ export interface AiFundExternalProfileRow {
   fetched_at: string;
 }
 
+export interface AiFundImportBatchRow {
+  id: string;
+  user_id: string;
+  canonical_file_name: string;
+  canonical_storage_path: string | null;
+  markdown_file_name: string | null;
+  markdown_storage_path: string | null;
+  status: string;
+  summary: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiFundConceptSourceRow {
+  id: string;
+  user_id: string;
+  concept_id: string;
+  import_batch_id: string | null;
+  source_type: string;
+  source_file: string | null;
+  storage_path: string | null;
+  source_section: string | null;
+  submitter: string | null;
+  raw_text: string | null;
+  comments: string | null;
+  original_language: string | null;
+  english_summary: string | null;
+  status_raw: string | null;
+  sector_raw: string | null;
+  thesis_raw: string | null;
+  dedupe_hint: string | null;
+  extracted_fields: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // Row-to-Model Converters
 // ---------------------------------------------------------------------------
@@ -668,6 +888,129 @@ export function personFromRow(row: AiFundPersonRow): AiFundPerson {
     metadata: row.metadata,
     harmonicPersonId: row.harmonic_person_id,
     harmonicEnrichedAt: row.harmonic_enriched_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function importBatchFromRow(row: AiFundImportBatchRow): AiFundImportBatch {
+  const metadata = row.metadata ?? {};
+  const uploadedFiles = Array.isArray(metadata.uploadedFiles)
+    ? metadata.uploadedFiles.filter((file: unknown): file is AiFundImportBatchFile => {
+      if (!file || typeof file !== "object") {
+        return false;
+      }
+
+      const candidate = file as Record<string, unknown>;
+      return (
+        typeof candidate.fileName === "string" &&
+        typeof candidate.storagePath === "string" &&
+        typeof candidate.sourceType === "string" &&
+        (
+          candidate.category === "canonical" ||
+          candidate.category === "attachment" ||
+          candidate.category === "markdown"
+        )
+      );
+    })
+    : [];
+
+  const matchedAttachments = Array.isArray(metadata.matchedAttachments)
+    ? metadata.matchedAttachments.filter((attachment: unknown): attachment is BulkConceptImportAttachmentPreview => {
+      if (!attachment || typeof attachment !== "object") {
+        return false;
+      }
+
+      const candidate = attachment as Record<string, unknown>;
+      return (
+        typeof candidate.fileName === "string" &&
+        typeof candidate.relativePath === "string" &&
+        typeof candidate.sourceType === "string"
+      );
+    })
+    : [];
+
+  const unmatchedAttachments = Array.isArray(metadata.unmatchedAttachments)
+    ? metadata.unmatchedAttachments
+      .filter((attachment: unknown): attachment is BulkConceptImportAttachmentPreview => {
+        if (!attachment || typeof attachment !== "object") {
+          return false;
+        }
+
+        const candidate = attachment as Record<string, unknown>;
+        return (
+          typeof candidate.fileName === "string" &&
+          typeof candidate.relativePath === "string" &&
+          typeof candidate.sourceType === "string"
+        );
+      })
+      .map((attachment: BulkConceptImportAttachmentPreview) => ({
+        ...attachment,
+        batchId: row.id,
+        storagePath: uploadedFiles.find((file: AiFundImportBatchFile) => file.fileName === attachment.fileName)?.storagePath || null,
+      }))
+    : [];
+
+  const dismissedAttachments = Array.isArray(metadata.dismissedAttachments)
+    ? metadata.dismissedAttachments
+      .filter((attachment: unknown): attachment is BulkConceptImportAttachmentPreview => {
+        if (!attachment || typeof attachment !== "object") {
+          return false;
+        }
+
+        const candidate = attachment as Record<string, unknown>;
+        return (
+          typeof candidate.fileName === "string" &&
+          typeof candidate.relativePath === "string" &&
+          typeof candidate.sourceType === "string"
+        );
+      })
+      .map((attachment: BulkConceptImportAttachmentPreview) => ({
+        ...attachment,
+        batchId: row.id,
+        storagePath: uploadedFiles.find((file: AiFundImportBatchFile) => file.fileName === attachment.fileName)?.storagePath || null,
+      }))
+    : [];
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    canonicalFileName: row.canonical_file_name,
+    canonicalStoragePath: row.canonical_storage_path,
+    markdownFileName: row.markdown_file_name,
+    markdownStoragePath: row.markdown_storage_path,
+    status: row.status,
+    summary: row.summary ?? {},
+    metadata,
+    uploadedFiles,
+    matchedAttachments,
+    unmatchedAttachments,
+    dismissedAttachments,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function conceptSourceFromRow(row: AiFundConceptSourceRow): AiFundConceptSource {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    conceptId: row.concept_id,
+    importBatchId: row.import_batch_id,
+    sourceType: row.source_type,
+    sourceFile: row.source_file,
+    storagePath: row.storage_path,
+    sourceSection: row.source_section,
+    submitter: row.submitter,
+    rawText: row.raw_text,
+    comments: row.comments,
+    originalLanguage: row.original_language,
+    englishSummary: row.english_summary,
+    statusRaw: row.status_raw,
+    sectorRaw: row.sector_raw,
+    thesisRaw: row.thesis_raw,
+    dedupeHint: row.dedupe_hint,
+    extractedFields: row.extracted_fields ?? {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

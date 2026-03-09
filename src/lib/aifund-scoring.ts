@@ -2,7 +2,7 @@
  * AI Fund Scoring Engine
  *
  * Weighted composite scoring for FIR/VE candidates.
- * Weights: AI excellence 40%, technical ability 25%, product instinct 20%, leadership potential 15%
+ * 1-4 scale. Weights: AI excellence 40%, technical ability 30%, product instinct 18%, leadership potential 12%
  */
 
 import {
@@ -47,18 +47,18 @@ export function computeCompositeScore(scores: {
 
 export function scoreLabel(score: number | null): string {
   if (score === null || score === undefined) return "Unscored";
-  if (score >= 4.5) return "Exceptional";
-  if (score >= 3.5) return "Strong";
-  if (score >= 2.5) return "Moderate";
+  if (score >= 3.5) return "Exceptional";
+  if (score >= 2.8) return "Strong";
+  if (score >= 2.0) return "Moderate";
   if (score >= 1.5) return "Below Bar";
   return "No Hire";
 }
 
 export function scoreColor(score: number | null): string {
   if (score === null || score === undefined) return "text-muted-foreground";
-  if (score >= 4.5) return "text-emerald-400";
-  if (score >= 3.5) return "text-primary";
-  if (score >= 2.5) return "text-yellow-400";
+  if (score >= 3.5) return "text-emerald-400";
+  if (score >= 2.8) return "text-primary";
+  if (score >= 2.0) return "text-yellow-400";
   if (score >= 1.5) return "text-orange-400";
   return "text-destructive";
 }
@@ -67,8 +67,8 @@ export function scoreBadgeVariant(
   score: number | null
 ): "default" | "secondary" | "destructive" | "outline" {
   if (score === null) return "outline";
-  if (score >= 3.5) return "default";
-  if (score >= 2.5) return "secondary";
+  if (score >= 2.8) return "default";
+  if (score >= 2.0) return "secondary";
   return "destructive";
 }
 
@@ -77,8 +77,8 @@ export function scoreBadgeVariant(
 // ---------------------------------------------------------------------------
 
 /**
- * FIR candidates weight product instinct higher.
- * VE candidates weight technical ability higher.
+ * FIR: AI Excellence heaviest, Technical Ability second, then Product Instinct, Leadership.
+ * VE: AI Excellence heaviest, Technical Ability second (higher than FIR), then Leadership, Product Instinct.
  * Returns an adjusted composite using role-specific weights.
  */
 export function roleAdjustedScore(
@@ -91,16 +91,16 @@ export function roleAdjustedScore(
   role: "fir" | "ve"
 ): number | null {
   const firWeights = {
-    aiExcellence: 0.35,
-    technicalAbility: 0.15,
-    productInstinct: 0.30,
-    leadershipPotential: 0.20,
+    aiExcellence: 0.38,
+    technicalAbility: 0.28,
+    productInstinct: 0.20,
+    leadershipPotential: 0.14,
   };
 
   const veWeights = {
-    aiExcellence: 0.35,
+    aiExcellence: 0.38,
     technicalAbility: 0.35,
-    productInstinct: 0.15,
+    productInstinct: 0.12,
     leadershipPotential: 0.15,
   };
 
