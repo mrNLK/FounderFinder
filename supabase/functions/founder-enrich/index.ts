@@ -68,6 +68,55 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Retry Helper
+// ---------------------------------------------------------------------------
+
+const BACKOFF_MS = [1000, 2000, 4000];
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  maxRetries = 3,
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, init);
+
+      if (response.ok) return response;
+
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("Retry-After");
+        const waitMs = retryAfter
+          ? parseInt(retryAfter, 10) * 1000
+          : BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, waitMs));
+          continue;
+        }
+      }
+
+      if (response.status >= 500 && attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]));
+        continue;
+      }
+
+      const text = await response.text();
+      throw new Error(`${url} failed: ${response.status} ${text}`);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]));
+        continue;
+      }
+    }
+  }
+
+  throw lastError ?? new Error(`${url} failed after ${maxRetries} retries`);
+}
+
+// ---------------------------------------------------------------------------
 // Parallel API
 // ---------------------------------------------------------------------------
 
@@ -114,23 +163,21 @@ async function createTaskGroup(
     },
   }));
 
-  const response = await fetch(`${PARALLEL_BASE}/v1/task-groups`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
+  const response = await fetchWithRetry(
+    `${PARALLEL_BASE}/v1/task-groups`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        tasks,
+        output: OUTPUT_PROMPT,
+        output_type: "json",
+      }),
     },
-    body: JSON.stringify({
-      tasks,
-      output: OUTPUT_PROMPT,
-      output_type: "json",
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Parallel createTaskGroup failed: ${response.status} ${text}`);
-  }
+  );
 
   const data = asRecord(await response.json());
   const taskGroupId = asString(data.id) || asString(data.task_group_id);
@@ -149,18 +196,16 @@ async function getTaskGroupStatus(
   status: "running" | "completed" | "error";
   results: Record<string, unknown>[];
 }> {
-  const response = await fetch(`${PARALLEL_BASE}/v1/task-groups/${taskGroupId}`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
+  const response = await fetchWithRetry(
+    `${PARALLEL_BASE}/v1/task-groups/${taskGroupId}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+      },
     },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Parallel getTaskGroup failed: ${response.status} ${text}`);
-  }
+  );
 
   const data = asRecord(await response.json());
   const rawStatus = asString(data.status) || "running";

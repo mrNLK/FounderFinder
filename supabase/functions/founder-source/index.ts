@@ -80,6 +80,59 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Retry Helper
+// ---------------------------------------------------------------------------
+
+const BACKOFF_MS = [1000, 2000, 4000];
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  maxRetries = 3,
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, init);
+
+      if (response.ok) return response;
+
+      // 429 — respect Retry-After header
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("Retry-After");
+        const waitMs = retryAfter
+          ? parseInt(retryAfter, 10) * 1000
+          : BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, waitMs));
+          continue;
+        }
+      }
+
+      // 5xx — transient, retry with backoff
+      if (response.status >= 500 && attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]));
+        continue;
+      }
+
+      // 4xx (non-429) — fail immediately
+      const text = await response.text();
+      throw new Error(`${url} failed: ${response.status} ${text}`);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      // Network error — retry with backoff
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]));
+        continue;
+      }
+    }
+  }
+
+  throw lastError ?? new Error(`${url} failed after ${maxRetries} retries`);
+}
+
+// ---------------------------------------------------------------------------
 // Exa Websets API Helpers
 // ---------------------------------------------------------------------------
 
@@ -90,19 +143,17 @@ async function exaFetch(
   apiKey: string,
   options: { method?: string; body?: unknown } = {},
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(`${EXA_BASE}${path}`, {
-    method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
+  const response = await fetchWithRetry(
+    `${EXA_BASE}${path}`,
+    {
+      method: options.method || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+      },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
     },
-    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Exa API ${path} failed: ${response.status} ${text}`);
-  }
+  );
 
   return (await response.json()) as Record<string, unknown>;
 }
@@ -211,9 +262,11 @@ async function pollUntilIdle(websetId: string, apiKey: string, maxAttempts = 60)
 
 async function retrieveAllItems(websetId: string, apiKey: string): Promise<WebsetItem[]> {
   const items: WebsetItem[] = [];
+  const seenIds = new Set<string>();
   let cursor: string | null = null;
+  const maxPages = 20;
 
-  for (;;) {
+  for (let page = 0; page < maxPages; page++) {
     const params = new URLSearchParams();
     if (cursor) params.set("cursor", cursor);
     params.set("limit", "100");
@@ -226,8 +279,11 @@ async function retrieveAllItems(websetId: string, apiKey: string): Promise<Webse
     const data = Array.isArray(response.data) ? response.data : [];
     for (const raw of data) {
       const record = asRecord(raw);
+      const id = asString(record.id) || crypto.randomUUID();
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
       items.push({
-        id: (asString(record.id) || crypto.randomUUID()),
+        id,
         url: asString(record.url) || "",
         properties: asRecord(record.properties),
         enrichments: asRecord(record.enrichments),
@@ -406,11 +462,31 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const items = await retrieveAllItems(websetId, apiKey);
 
     // 5. Map to candidate shape
-    const candidates = items.map(mapItemToCandidate);
+    const allCandidates = items.map(mapItemToCandidate);
+
+    // 6. Deduplicate by normalized URL and by name+company
+    const seenUrls = new Set<string>();
+    const seenNameCompany = new Set<string>();
+    const candidates: CandidateData[] = [];
+
+    for (const c of allCandidates) {
+      const normUrl = c.profileUrl.toLowerCase().replace(/\/+$/, "").replace(/\?.*$/, "");
+      if (seenUrls.has(normUrl)) continue;
+      seenUrls.add(normUrl);
+
+      const nameKey = `${c.name.toLowerCase().trim()}|||${(c.company || "").toLowerCase().trim()}`;
+      if (seenNameCompany.has(nameKey)) continue;
+      seenNameCompany.add(nameKey);
+
+      candidates.push(c);
+    }
+
+    const deduplicatedCount = allCandidates.length - candidates.length;
 
     return json({
       websetId,
       totalFound: candidates.length,
+      deduplicatedCount,
       candidates,
     });
   } catch (error) {

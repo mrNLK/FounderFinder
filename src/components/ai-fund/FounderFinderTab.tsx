@@ -6,7 +6,7 @@
  * and enriches with Parallel Task Groups.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle,
@@ -16,9 +16,11 @@ import {
   Download,
   ExternalLink,
   Filter,
+  Info,
   Loader2,
   Search,
   Upload,
+  Users,
   X,
 } from "lucide-react";
 import type {
@@ -40,6 +42,7 @@ import {
   exportCandidatesCsv,
   downloadCsv,
 } from "@/lib/founder-finder";
+import { normalizeComparableUrl } from "@/lib/url-utils";
 
 interface Props {
   workspace: AiFundWorkspace;
@@ -98,6 +101,31 @@ function scoreBarColor(tier: 1 | 2 | 3 | null): string {
 }
 
 // ---------------------------------------------------------------------------
+// Score Breakdown
+// ---------------------------------------------------------------------------
+
+function scoreBreakdown(eeaScore: CandidateResult["eeaScore"]): string {
+  const parts: string[] = [];
+
+  if (eeaScore.matchedTier1.length > 0) {
+    parts.push(`Base: 85 (Tier 1 signal)`);
+    if (eeaScore.matchedTier1.length > 1) {
+      parts.push(`+${(eeaScore.matchedTier1.length - 1) * 5} (${eeaScore.matchedTier1.length - 1} additional T1)`);
+    }
+  } else if (eeaScore.matchedTier2.length > 0) {
+    parts.push(`Base: 40 + ${eeaScore.matchedTier2.length} × 8 = ${40 + eeaScore.matchedTier2.length * 8}`);
+  }
+
+  // We can't know exact bonuses from the score alone, but we can indicate them
+  if (eeaScore.falsePositiveFlags.length > 0) {
+    parts.push(`−${eeaScore.falsePositiveFlags.length * 10} (${eeaScore.falsePositiveFlags.length} FP flag${eeaScore.falsePositiveFlags.length > 1 ? "s" : ""})`);
+  }
+
+  parts.push(`Final: ${eeaScore.score}/100`);
+  return parts.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -108,6 +136,10 @@ export default function FounderFinderTab({ workspace }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [importingKey, setImportingKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [enrichmentFailed, setEnrichmentFailed] = useState(false);
+  const [batchImporting, setBatchImporting] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+  const [showScoreBreakdown, setShowScoreBreakdown] = useState<string | null>(null);
 
   // Filters
   const [filterTier, setFilterTier] = useState<1 | 2 | 3 | null>(null);
@@ -132,6 +164,22 @@ export default function FounderFinderTab({ workspace }: Props) {
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Pre-flight checks
+  // ---------------------------------------------------------------------------
+
+  const exaConfigured = useMemo(() => {
+    const exa = workspace.settings?.integrations?.exa;
+    if (!exa) return false;
+    return !!exa.configured;
+  }, [workspace.settings]);
+
+  const parallelConfigured = useMemo(() => {
+    const parallel = workspace.settings?.integrations?.parallel;
+    if (!parallel) return false;
+    return !!parallel.configured;
+  }, [workspace.settings]);
+
+  // ---------------------------------------------------------------------------
   // Run Pipeline
   // ---------------------------------------------------------------------------
 
@@ -141,6 +189,9 @@ export default function FounderFinderTab({ workspace }: Props) {
     setTaskGroupId(null);
     setOutreachHooks({});
     setExpandedCards(new Set());
+    setEnrichmentFailed(false);
+    setBatchProgress(null);
+    setShowScoreBreakdown(null);
 
     try {
       // Step 1: Source from Exa Websets
@@ -235,7 +286,7 @@ export default function FounderFinderTab({ workspace }: Props) {
             } else if (status.status === "error") {
               if (pollRef.current) clearInterval(pollRef.current);
               pollRef.current = null;
-              // Enrichment failed but we still have Exa results
+              setEnrichmentFailed(true);
               setStep("complete");
             }
           } catch {
@@ -245,6 +296,7 @@ export default function FounderFinderTab({ workspace }: Props) {
       } catch (enrichError) {
         // Enrichment failed — show Exa results without enrichment
         console.error("Enrichment failed:", enrichError);
+        setEnrichmentFailed(true);
         setStep("complete");
       }
     } catch (pipelineError) {
@@ -298,28 +350,34 @@ export default function FounderFinderTab({ workspace }: Props) {
     downloadCsv(csv, `founder-finder-${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
+  const buildPersonPayload = (candidate: CandidateResult) => ({
+    fullName: candidate.name,
+    linkedinUrl: candidate.linkedinUrl || null,
+    githubUrl: candidate.githubUrl || null,
+    currentRole: candidate.title || null,
+    currentCompany: candidate.company || null,
+    location: candidate.location || null,
+    bio: candidate.eeaScore.summary || null,
+    personType: "fir" as const,
+    sourceChannel: "founder-finder",
+    metadata: {
+      eeaTier: candidate.eeaScore.tier,
+      eeaScore: candidate.eeaScore.score,
+      eeaMatchedTier1: candidate.eeaScore.matchedTier1,
+      eeaMatchedTier2: candidate.eeaScore.matchedTier2,
+      falsePositiveFlags: candidate.eeaScore.falsePositiveFlags,
+      eeaSummary: candidate.eeaScore.summary,
+      profileUrl: candidate.profileUrl,
+    },
+  });
+
   const handleImport = async (candidate: CandidateResult) => {
     const key = candidate.profileUrl || candidate.name;
     if (importingKey) return;
 
     try {
       setImportingKey(key);
-      await workspace.addPerson({
-        fullName: candidate.name,
-        linkedinUrl: candidate.linkedinUrl || null,
-        githubUrl: candidate.githubUrl || null,
-        currentRole: candidate.title || null,
-        currentCompany: candidate.company || null,
-        location: candidate.location || null,
-        bio: candidate.eeaScore.summary || null,
-        personType: "fir",
-        sourceChannel: "founder-finder",
-        metadata: {
-          eeaTier: candidate.eeaScore.tier,
-          eeaScore: candidate.eeaScore.score,
-          profileUrl: candidate.profileUrl,
-        },
-      });
+      await workspace.addPerson(buildPersonPayload(candidate));
     } catch (importError) {
       console.error("Import failed:", importError);
     } finally {
@@ -327,16 +385,43 @@ export default function FounderFinderTab({ workspace }: Props) {
     }
   };
 
-  const isImported = (candidate: CandidateResult): boolean => {
-    const candidateName = candidate.name.toLowerCase().trim();
-    return workspace.people.some((p) => {
-      if (candidate.linkedinUrl && p.linkedinUrl) {
-        const a = candidate.linkedinUrl.toLowerCase().replace(/\/+$/, "");
-        const b = p.linkedinUrl.toLowerCase().replace(/\/+$/, "");
-        if (a === b) return true;
+  const handleBatchImportTier1 = useCallback(async () => {
+    const tier1 = candidates.filter((c) => c.eeaScore.tier === 1 && !isImported(c));
+    if (tier1.length === 0 || batchImporting) return;
+
+    setBatchImporting(true);
+    setBatchProgress({ done: 0, total: tier1.length });
+
+    for (let i = 0; i < tier1.length; i++) {
+      try {
+        await workspace.addPerson(buildPersonPayload(tier1[i]));
+      } catch (err) {
+        console.error(`Batch import failed for ${tier1[i].name}:`, err);
       }
-      return p.fullName.toLowerCase().trim() === candidateName &&
-        (p.currentCompany || "").toLowerCase().trim() === (candidate.company || "").toLowerCase().trim();
+      setBatchProgress({ done: i + 1, total: tier1.length });
+    }
+
+    setBatchImporting(false);
+    setBatchProgress(null);
+  }, [candidates, batchImporting, workspace]);
+
+  const isImported = (candidate: CandidateResult): boolean => {
+    const candidateLinkedIn = normalizeComparableUrl(candidate.linkedinUrl);
+    const candidateGitHub = normalizeComparableUrl(candidate.githubUrl);
+    const candidateName = candidate.name.toLowerCase().trim();
+    const candidateCompany = (candidate.company || "").toLowerCase().trim();
+
+    return workspace.people.some((p) => {
+      const personLinkedIn = normalizeComparableUrl(p.linkedinUrl);
+      const personGitHub = normalizeComparableUrl(p.githubUrl);
+
+      if (candidateLinkedIn && personLinkedIn === candidateLinkedIn) return true;
+      if (candidateGitHub && personGitHub === candidateGitHub) return true;
+
+      return (
+        p.fullName.toLowerCase().trim() === candidateName &&
+        (p.currentCompany || "").toLowerCase().trim() === candidateCompany
+      );
     });
   };
 
@@ -357,6 +442,7 @@ export default function FounderFinderTab({ workspace }: Props) {
 
   const isRunning = step === "sourcing" || step === "scoring" || step === "enriching" || step === "merging";
   const hasResults = candidates.length > 0;
+  const tier1Count = candidates.filter((c) => c.eeaScore.tier === 1 && !isImported(c)).length;
 
   // ---------------------------------------------------------------------------
   // Render
@@ -373,6 +459,25 @@ export default function FounderFinderTab({ workspace }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {hasResults && tier1Count > 0 && (
+            <button
+              onClick={() => void handleBatchImportTier1()}
+              disabled={batchImporting || isRunning}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#00e5a040] bg-[#00e5a010] text-sm font-medium text-[#00e5a0] hover:bg-[#00e5a020] disabled:opacity-50 transition-colors"
+            >
+              {batchImporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {batchProgress ? `${batchProgress.done}/${batchProgress.total}` : "..."}
+                </>
+              ) : (
+                <>
+                  <Users className="w-4 h-4" />
+                  Import All Tier 1 ({tier1Count})
+                </>
+              )}
+            </button>
+          )}
           {hasResults && (
             <button
               onClick={handleExport}
@@ -384,7 +489,8 @@ export default function FounderFinderTab({ workspace }: Props) {
           )}
           <button
             onClick={runPipeline}
-            disabled={isRunning}
+            disabled={isRunning || !exaConfigured}
+            title={!exaConfigured ? "Configure Exa API key in Settings first" : undefined}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             {isRunning ? (
@@ -397,10 +503,41 @@ export default function FounderFinderTab({ workspace }: Props) {
         </div>
       </div>
 
+      {/* Pre-flight: Exa not configured */}
+      {!exaConfigured && step === "idle" && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-400 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            Exa API key not configured. Add it in the{" "}
+            <span className="font-medium text-amber-300">Settings</span> tab to use Founder Finder.
+          </span>
+        </div>
+      )}
+
+      {/* Pre-flight: Parallel not configured (warning only) */}
+      {exaConfigured && !parallelConfigured && step === "idle" && !hasResults && (
+        <div className="rounded-xl border border-border bg-background px-4 py-3 text-xs text-muted-foreground flex items-start gap-2">
+          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>
+            Parallel API key not configured. Enrichment (outreach hooks, deep signals) will be skipped.
+          </span>
+        </div>
+      )}
+
       {/* Error */}
       {error && (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
+        </div>
+      )}
+
+      {/* Enrichment failure warning */}
+      {enrichmentFailed && step === "complete" && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-400 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            Enrichment unavailable — showing Exa results only. Outreach hooks and deep signals require a configured Parallel API key.
+          </span>
         </div>
       )}
 
@@ -514,14 +651,14 @@ export default function FounderFinderTab({ workspace }: Props) {
       )}
 
       {/* Empty State */}
-      {step === "idle" && !hasResults && (
+      {step === "idle" && !hasResults && exaConfigured && (
         <div className="py-16 text-center bg-card border border-border rounded-xl">
           <Search className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">
             Click "Find Founders" to search for exceptional GenAI founders.
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            Requires Exa API key configured in Settings.
+            Uses Exa Websets with 5 search queries and 9 enrichment columns.
           </p>
         </div>
       )}
@@ -535,6 +672,7 @@ export default function FounderFinderTab({ workspace }: Props) {
             const isExpanded = expandedCards.has(cardKey);
             const alreadyImported = isImported(candidate);
             const outreachHook = outreachHooks[candidate.name.toLowerCase().trim()] || null;
+            const showBreakdown = showScoreBreakdown === cardKey;
 
             return (
               <div
@@ -550,14 +688,21 @@ export default function FounderFinderTab({ workspace }: Props) {
                     </p>
                   </div>
                   <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${badge.className}`}>
-                    {candidate.eeaScore.tier ? `T${candidate.eeaScore.tier}` : "—"}
+                    {candidate.eeaScore.tier ? `T${candidate.eeaScore.tier}` : "\u2014"}
                   </span>
                 </div>
 
                 {/* Score Bar */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-mono text-[#888]">EEA Score</span>
+                    <button
+                      onClick={() => setShowScoreBreakdown(showBreakdown ? null : cardKey)}
+                      className="flex items-center gap-1 text-[10px] font-mono text-[#888] hover:text-[#e8e8e8] transition-colors"
+                      title="Click to see score breakdown"
+                    >
+                      EEA Score
+                      <Info className="w-2.5 h-2.5" />
+                    </button>
                     <span className="text-xs font-mono font-medium text-[#e8e8e8]">{candidate.eeaScore.score}</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-[#2a2a35]">
@@ -566,6 +711,11 @@ export default function FounderFinderTab({ workspace }: Props) {
                       style={{ width: `${candidate.eeaScore.score}%` }}
                     />
                   </div>
+                  {showBreakdown && (
+                    <pre className="mt-2 text-[10px] font-mono text-[#888] leading-relaxed whitespace-pre-wrap bg-[#0d0d12] rounded-md px-2 py-1.5 border border-[#2a2a35]">
+                      {scoreBreakdown(candidate.eeaScore)}
+                    </pre>
+                  )}
                 </div>
 
                 {/* Tier Badge */}

@@ -143,6 +143,16 @@ const TIER_1_SIGNALS: Tier1Signal[] = [
       (s) => s.includes("core maintainer"),
     ],
   },
+  {
+    label: "Elite AI Lab Engineer",
+    matchers: [
+      (s) => s.includes("ex-openai") || (s.includes("openai") && (s.includes("engineer") || s.includes("researcher"))),
+      (s) => s.includes("ex-anthropic") || (s.includes("anthropic") && (s.includes("engineer") || s.includes("researcher"))),
+      (s) => s.includes("ex-deepmind") || (s.includes("deepmind") && (s.includes("engineer") || s.includes("researcher"))),
+      (s) => s.includes("google brain") && !s.includes("resident"),
+      (s) => s.includes("meta fair") || s.includes("facebook ai research"),
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -284,6 +294,23 @@ const TIER_2_SIGNALS: Tier2Signal[] = [
       (s) => /\bmit\b/.test(s),
       (s) => s.includes("berkeley"),
       (s) => /\bcmu\b/.test(s),
+    ],
+    requiresCombination: true,
+  },
+  {
+    label: "Multiple Exits",
+    matchers: [
+      (s) => {
+        const match = s.match(/(\d+)\s*(?:exits?|acquisitions)/i);
+        return match ? parseInt(match[1], 10) >= 2 : false;
+      },
+    ],
+  },
+  {
+    label: "Ex-FAANG Senior+",
+    matchers: [
+      (s) => (s.includes("staff engineer") || s.includes("principal engineer") || s.includes("distinguished engineer")) &&
+             (s.includes("google") || s.includes("meta") || s.includes("apple") || s.includes("amazon")),
     ],
     requiresCombination: true,
   },
