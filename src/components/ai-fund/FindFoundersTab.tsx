@@ -2,10 +2,10 @@
  * Find Founders Tab — Core Sourcing Pipeline
  *
  * Surfaces technically exceptional GenAI founders for AI Fund's FIR program.
- * Pipeline: Exa Websets → Parallel enrichment → EEA scoring → ranked results.
+ * Pipeline: Exa search → EEA scoring → Parallel enrichment → ranked results.
  *
- * All external API calls go through MCP tools (server-side).
- * Never fabricates LinkedIn or GitHub URLs.
+ * All external API calls go through Supabase Edge Functions (aifund-intelligence).
+ * Never fabricates LinkedIn or GitHub URLs — only surfaces URLs returned by APIs.
  */
 
 import { useState, useCallback } from "react";
@@ -28,9 +28,15 @@ import {
   Star,
   Target,
   Zap,
+  RefreshCw,
+  Settings2,
+  Plus,
+  UserPlus,
 } from "lucide-react";
-import type { AiFundWorkspace } from "@/types/ai-fund";
+import type { AiFundWorkspace, AiFundProviderIntelligenceSummary } from "@/types/ai-fund";
 import { scoreCandidate, type EEAScore } from "@/lib/eea-scorer";
+import { createIntelligenceRun } from "@/lib/ai-fund";
+import { runAiFundIntelligence } from "@/lib/aifund-settings";
 
 interface Props {
   workspace: AiFundWorkspace;
@@ -59,9 +65,53 @@ export interface CandidateResult {
   enriched: boolean;
   bayAreaConfirmed: boolean;
   zeroToOneEvidence?: string[];
+  source: "exa" | "parallel" | "github" | "manual";
 }
 
 type PipelineStage = "idle" | "searching" | "scoring" | "enriching" | "complete" | "error";
+
+// ---------------------------------------------------------------------------
+// Search Query Templates
+// ---------------------------------------------------------------------------
+
+const SEARCH_QUERIES = [
+  {
+    id: "genai-founders-bay-area",
+    label: "GenAI Founders — Bay Area",
+    query: "generative AI startup founder B2B enterprise application layer Mountain View San Francisco Palo Alto NeurIPS ICML Stanford MIT",
+    provider: "exa" as const,
+  },
+  {
+    id: "ml-engineers-competitions",
+    label: "ML Engineers — Competition Winners",
+    query: "machine learning engineer IOI IMO Kaggle Grandmaster Codeforces competitive programming AI startup founder",
+    provider: "exa" as const,
+  },
+  {
+    id: "ai-researchers-founders",
+    label: "AI Researchers → Founders",
+    query: "AI researcher co-founder startup NeurIPS ICML ICLR paper published B2B SaaS enterprise generative AI LLM",
+    provider: "exa" as const,
+  },
+  {
+    id: "deeplearning-ai-alumni",
+    label: "DL.AI Advanced Completers",
+    query: "deeplearning.ai MLOps specialization LLM founder startup AI company technical co-founder",
+    provider: "exa" as const,
+  },
+  {
+    id: "oss-ml-founders",
+    label: "Open Source ML → Founders",
+    query: "open source machine learning framework creator founder startup GitHub stars PyTorch TensorFlow Hugging Face LangChain",
+    provider: "github" as const,
+  },
+  {
+    id: "custom",
+    label: "Custom Query",
+    query: "",
+    provider: "exa" as const,
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,32 +138,158 @@ function tierBadge(tier: 1 | 2 | 3 | null): { label: string; classes: string } {
   }
 }
 
+function detectFounder(text: string): boolean {
+  const lower = text.toLowerCase();
+  return ["founder", "co-founder", "cofounder", "ceo", "cto", "chief"].some(t => lower.includes(t));
+}
+
+function detectB2B(text: string): CandidateResult["b2bFocus"] {
+  const lower = text.toLowerCase();
+  const b2b = ["b2b", "enterprise", "saas", "business"].some(t => lower.includes(t));
+  const b2c = ["b2c", "consumer", "social", "gaming"].some(t => lower.includes(t));
+  if (b2b && b2c) return "Both";
+  if (b2b) return "B2B";
+  if (b2c) return "B2C";
+  return "Unclear";
+}
+
+function detectTechnicalDepth(text: string): CandidateResult["technicalDepth"] {
+  const lower = text.toLowerCase();
+  const deep = ["phd", "researcher", "engineer", "neurips", "icml", "iclr", "cvpr", "arxiv",
+    "machine learning", "deep learning", "transformer", "neural", "kaggle", "codeforces",
+    "ioi", "imo", "competitive programming"].some(t => lower.includes(t));
+  if (deep) return "Deep technical";
+  const pm = ["product manager", "pm", "product lead"].some(t => lower.includes(t));
+  if (pm) return "Technical PM";
+  return "Unclear";
+}
+
+function extractLocation(text: string): string {
+  // Look for common location patterns
+  const patterns = [
+    /(?:based in|located in|lives in|from)\s+([A-Z][a-zA-Z\s,]+(?:CA|NY|MA|WA|TX))/i,
+    /(San Francisco|Palo Alto|Mountain View|New York|Boston|Seattle|Austin|Berkeley|San Jose|Menlo Park)(?:\s*,\s*[A-Z]{2})?/i,
+    /(Bay Area|Silicon Valley)/i,
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) return m[1].trim();
+  }
+  return "";
+}
+
+function extractName(title: string, text: string): string {
+  // Try to extract a person name from the title or text
+  // The Exa results often have the person's name in the title
+  const namePatterns = [
+    /^([A-Z][a-z]+ [A-Z][a-z]+)/,  // "John Smith - Title"
+    /([A-Z][a-z]+ [A-Z][a-z]+)(?:\s*[-|])/,
+  ];
+  for (const p of namePatterns) {
+    const m = title.match(p);
+    if (m) return m[1];
+  }
+  // Fallback: first capitalized word pair in text
+  const textMatch = text.match(/(?:^|\n)([A-Z][a-z]+ [A-Z][a-z]+)/);
+  if (textMatch) return textMatch[1];
+  return title.split(/[-|]/)[0].trim().slice(0, 40);
+}
+
+function extractCompany(text: string): string {
+  const patterns = [
+    /(?:founder|co-founder|ceo|cto)\s+(?:of|at)\s+([A-Z][a-zA-Z0-9\s]+?)(?:\s*[,.|])/i,
+    /(?:at|@)\s+([A-Z][a-zA-Z0-9]+(?:\s[A-Z][a-zA-Z0-9]+)?)/,
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) return m[1].trim();
+  }
+  return "";
+}
+
+function extractLinkedInUrl(text: string, url: string): string | null {
+  // Only return URLs that actually came from the API
+  if (url.includes("linkedin.com/in/")) return url;
+  const match = text.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+function extractGithubUrl(text: string, url: string): string | null {
+  if (url.includes("github.com/")) return url;
+  const match = text.match(/(https?:\/\/github\.com\/[a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+function generateOutreachHook(name: string, signals: EEAScore): string | undefined {
+  if (signals.matchedTier1.length > 0) {
+    const top = signals.matchedTier1[0];
+    return `Your ${top} background caught our attention — that level of technical depth is exactly what we look for in Founder in Residence candidates at AI Fund.`;
+  }
+  if (signals.matchedTier2.length >= 2) {
+    return `The combination of ${signals.matchedTier2[0]} and ${signals.matchedTier2[1]} tells us a lot about your technical trajectory — worth a conversation about what we're building at AI Fund.`;
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Result Parsing
+// ---------------------------------------------------------------------------
+
+function parseProviderResults(summary: AiFundProviderIntelligenceSummary, source: "exa" | "github"): CandidateResult[] {
+  const items = summary.items || [];
+  return items.map(item => {
+    const url = item.url || "";
+    const snippet = item.snippet || "";
+    const fullText = [item.title, item.subtitle || "", snippet, ...(item.tags || [])].join(" ");
+    const name = extractName(item.title, fullText);
+    const company = extractCompany(fullText);
+    const location = extractLocation(fullText);
+    const eeaScore = scoreCandidate([fullText]);
+    const linkedinUrl = extractLinkedInUrl(fullText, url);
+    const githubUrl = extractGithubUrl(fullText, url);
+
+    return {
+      id: crypto.randomUUID(),
+      name,
+      title: item.subtitle || "",
+      company,
+      linkedinUrl,
+      githubUrl,
+      location,
+      isFounder: detectFounder(fullText),
+      b2bFocus: detectB2B(fullText),
+      technicalDepth: detectTechnicalDepth(fullText),
+      eeaSignals: fullText,
+      eeaScore,
+      profileUrl: url,
+      snippet: snippet.slice(0, 300) || item.title,
+      outreachHook: generateOutreachHook(name, eeaScore),
+      enriched: false,
+      bayAreaConfirmed: isBayArea(location || fullText),
+      source,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CSV Export
+// ---------------------------------------------------------------------------
+
 function exportCSV(candidates: CandidateResult[]): void {
   const headers = [
     "name", "title", "company", "location", "linkedin_url", "github_url",
     "eea_tier", "eea_score", "tier1_signals", "tier2_signals", "false_positive_flags",
-    "b2b_focus", "technical_depth", "zero_to_one_evidence", "outreach_hook",
-    "eea_summary", "profile_url",
+    "b2b_focus", "technical_depth", "outreach_hook", "eea_summary", "profile_url", "source",
   ];
 
   const rows = candidates.map(c => [
-    c.name,
-    c.title,
-    c.company,
-    c.location,
-    c.linkedinUrl || "",
-    c.githubUrl || "",
-    c.eeaScore.tier?.toString() || "",
-    c.eeaScore.score.toString(),
-    c.eeaScore.matchedTier1.join("; "),
-    c.eeaScore.matchedTier2.join("; "),
+    c.name, c.title, c.company, c.location,
+    c.linkedinUrl || "", c.githubUrl || "",
+    c.eeaScore.tier?.toString() || "", c.eeaScore.score.toString(),
+    c.eeaScore.matchedTier1.join("; "), c.eeaScore.matchedTier2.join("; "),
     c.eeaScore.falsePositiveFlags.join("; "),
-    c.b2bFocus,
-    c.technicalDepth,
-    c.zeroToOneEvidence?.join("; ") || "",
-    c.outreachHook || "",
-    c.eeaScore.summary,
-    c.profileUrl,
+    c.b2bFocus, c.technicalDepth,
+    c.outreachHook || "", c.eeaScore.summary, c.profileUrl, c.source,
   ]);
 
   const csvContent = [headers, ...rows]
@@ -130,77 +306,19 @@ function exportCSV(candidates: CandidateResult[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// Demo data for UI validation (real pipeline uses Exa + Parallel)
-// ---------------------------------------------------------------------------
-
-function generateDemoCandidate(i: number): CandidateResult {
-  const demoProfiles = [
-    {
-      name: "Sarah Chen", title: "CEO & Co-Founder", company: "NeuralForge AI",
-      location: "San Francisco, CA", signals: "NeurIPS 2023 oral presentation, first author, Stanford CS PhD, Y Combinator W24, LLM inference optimization, built from scratch",
-      b2b: "B2B" as const, depth: "Deep technical" as const, founder: true,
-      hook: "Your NeurIPS 2023 oral on attention mechanism pruning caught our eye — the 3x inference speedup is exactly the kind of technical depth we look for.",
-    },
-    {
-      name: "Alex Rivera", title: "Founder", company: "StackRAG",
-      location: "Palo Alto, CA", signals: "Kaggle Competition Grandmaster, Google PhD Fellow, ICML 2022, h-index 18, Google Scholar, core maintainer of vLLM, Bay Area, B2B enterprise RAG platform",
-      b2b: "B2B" as const, depth: "Deep technical" as const, founder: true,
-      hook: "Kaggle Grandmaster turned founder — your transition from competition ML to production RAG infrastructure at StackRAG is the exact trajectory we back.",
-    },
-    {
-      name: "Priya Patel", title: "CTO & Co-Founder", company: "FormLayer",
-      location: "Mountain View, CA", signals: "IOI Silver medal, Codeforces Grandmaster 2450, MIT EECS, Series A from Sequoia, B2B document processing, agent framework, zero to one, 10k stars GitHub",
-      b2b: "B2B" as const, depth: "Deep technical" as const, founder: true,
-      hook: "IOI Silver to Codeforces Grandmaster to 10K-star open source framework to Series A — that progression tells us everything about your velocity.",
-    },
-    {
-      name: "James Kim", title: "Founder & CEO", company: "SynthAI Labs",
-      location: "Berkeley, CA", signals: "ICLR 2024 spotlight, Google Brain Resident alumni, Berkeley PhD, NSF GRFP, arXiv highly cited, multimodal reasoning, application layer, B2B",
-      b2b: "B2B" as const, depth: "Deep technical" as const, founder: true,
-      hook: "Your ICLR spotlight on multimodal reasoning architectures, combined with the Google Brain residency — we think there's a conversation worth having.",
-    },
-    {
-      name: "Maria Santos", title: "Co-Founder", company: "Cortex Enterprise",
-      location: "San Jose, CA", signals: "Thiel Fellow, Stanford CS, CVPR 2023, Forbes 30 Under 30 Enterprise Technology, founded cortex, B2B enterprise AI, product shipped",
-      b2b: "B2B" as const, depth: "Deep technical" as const, founder: true,
-      hook: "Thiel Fellow to CVPR to enterprise AI founder — your path from research to shipped B2B product is what makes the FIR program compelling for someone like you.",
-    },
-  ];
-
-  const profile = demoProfiles[i % demoProfiles.length];
-  const score = scoreCandidate([profile.signals]);
-
-  return {
-    id: crypto.randomUUID(),
-    name: profile.name,
-    title: profile.title,
-    company: profile.company,
-    linkedinUrl: null,
-    githubUrl: null,
-    location: profile.location,
-    isFounder: profile.founder,
-    b2bFocus: profile.b2b,
-    technicalDepth: profile.depth,
-    eeaSignals: profile.signals,
-    eeaScore: score,
-    profileUrl: "",
-    snippet: profile.signals,
-    outreachHook: profile.hook,
-    enriched: false,
-    bayAreaConfirmed: isBayArea(profile.location),
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function FindFoundersTab({ workspace: _workspace }: Props) {
+export default function FindFoundersTab({ workspace }: Props) {
   const [candidates, setCandidates] = useState<CandidateResult[]>([]);
   const [stage, setStage] = useState<PipelineStage>("idle");
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [selectedQuery, setSelectedQuery] = useState(SEARCH_QUERIES[0].id);
+  const [customQuery, setCustomQuery] = useState("");
+  const [resultLimit, setResultLimit] = useState(20);
+  const [showQueryConfig, setShowQueryConfig] = useState(false);
 
   // Filters
   const [filterTier, setFilterTier] = useState<1 | 2 | 3 | null>(null);
@@ -222,34 +340,131 @@ export default function FindFoundersTab({ workspace: _workspace }: Props) {
     });
   };
 
+  const getActiveQuery = () => {
+    const template = SEARCH_QUERIES.find(q => q.id === selectedQuery);
+    if (!template) return { query: "", provider: "exa" as const };
+    if (template.id === "custom") return { query: customQuery, provider: template.provider };
+    return { query: template.query, provider: template.provider };
+  };
+
+  // ── REAL PIPELINE ──────────────────────────────────────────────────────
   const runPipeline = useCallback(async () => {
+    const { query, provider } = getActiveQuery();
+    if (!query.trim()) {
+      setError("Please enter a search query.");
+      return;
+    }
+
     setStage("searching");
     setError(null);
     setCandidates([]);
 
     try {
-      // Stage 1: Search (using demo data for now — real pipeline uses Exa Websets via MCP)
-      await new Promise(r => setTimeout(r, 1500));
+      // Stage 1: Create intelligence run and search via Exa/GitHub
+      const run = await createIntelligenceRun({
+        provider,
+        queryParams: { query, limit: resultLimit },
+      });
+
+      const { resultsSummary } = await runAiFundIntelligence({
+        runId: run.id,
+        query,
+        limit: resultLimit,
+      });
+
+      // Stage 2: Score results with EEA engine
       setStage("scoring");
 
-      // Stage 2: Score
-      await new Promise(r => setTimeout(r, 800));
-      const demoCandidates = Array.from({ length: 5 }, (_, i) => generateDemoCandidate(i));
-      demoCandidates.sort((a, b) => b.eeaScore.score - a.eeaScore.score);
-      setCandidates(demoCandidates);
+      const providerSummary = resultsSummary as AiFundProviderIntelligenceSummary;
+      const parsed = parseProviderResults(providerSummary, provider === "github" ? "github" : "exa");
 
+      // Score and rank
+      parsed.sort((a, b) => b.eeaScore.score - a.eeaScore.score);
+      setCandidates(parsed);
+
+      // Stage 3: Enrichment (run Parallel for top candidates in background)
       setStage("enriching");
 
-      // Stage 3: Enrich (background — show partial results immediately)
-      await new Promise(r => setTimeout(r, 2000));
-      setCandidates(prev => prev.map(c => ({ ...c, enriched: true })));
+      const tier1and2 = parsed.filter(c => c.eeaScore.tier === 1 || c.eeaScore.tier === 2);
+      if (tier1and2.length > 0) {
+        try {
+          const enrichRun = await createIntelligenceRun({
+            provider: "parallel",
+            queryParams: {
+              query: `Deep profile research on AI founders: ${tier1and2.slice(0, 5).map(c => c.name).join(", ")}. Find their publications, patents, competition results, fellowships, and current company details.`,
+              limit: 5,
+            },
+          });
+
+          const enrichResult = await runAiFundIntelligence({
+            runId: enrichRun.id,
+            query: `Deep profile research on AI founders: ${tier1and2.slice(0, 5).map(c => c.name).join(", ")}. Find publications, patents, competition medals, fellowships, open source projects, and company funding details.`,
+            limit: 5,
+          });
+
+          // Merge enrichment data back into candidates
+          const enrichItems = (enrichResult.resultsSummary as AiFundProviderIntelligenceSummary).items || [];
+          if (enrichItems.length > 0) {
+            setCandidates(prev => prev.map(c => {
+              // Find enrichment that mentions this candidate
+              const enrichMatch = enrichItems.find(e => {
+                const text = [e.title, e.subtitle || "", e.snippet || ""].join(" ").toLowerCase();
+                return text.includes(c.name.toLowerCase().split(" ")[0]);
+              });
+
+              if (enrichMatch) {
+                const enrichText = [enrichMatch.title, enrichMatch.subtitle || "", enrichMatch.snippet || ""].join(" ");
+                const reScore = scoreCandidate([c.eeaSignals, enrichText]);
+                return {
+                  ...c,
+                  enriched: true,
+                  eeaScore: reScore.score > c.eeaScore.score ? reScore : c.eeaScore,
+                  eeaSignals: c.eeaSignals + " " + enrichText,
+                  outreachHook: generateOutreachHook(c.name, reScore.score > c.eeaScore.score ? reScore : c.eeaScore) || c.outreachHook,
+                };
+              }
+              return { ...c, enriched: true };
+            }));
+          } else {
+            setCandidates(prev => prev.map(c => ({ ...c, enriched: true })));
+          }
+        } catch (enrichErr) {
+          // Enrichment failure is non-fatal — results still usable
+          console.warn("Parallel enrichment failed:", enrichErr);
+          setCandidates(prev => prev.map(c => ({ ...c, enriched: true })));
+        }
+      } else {
+        setCandidates(prev => prev.map(c => ({ ...c, enriched: true })));
+      }
 
       setStage("complete");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Pipeline failed");
+      const msg = err instanceof Error ? err.message : "Pipeline failed";
+      setError(msg);
       setStage("error");
     }
-  }, []);
+  }, [selectedQuery, customQuery, resultLimit]);
+
+  // ── Import to Talent Pool ──────────────────────────────────────────────
+  const importCandidate = async (candidate: CandidateResult) => {
+    try {
+      await workspace.addPerson({
+        fullName: candidate.name,
+        currentRole: candidate.title,
+        currentCompany: candidate.company,
+        location: candidate.location,
+        linkedinUrl: candidate.linkedinUrl || undefined,
+        githubUrl: candidate.githubUrl || undefined,
+        websiteUrl: candidate.profileUrl || undefined,
+        personType: candidate.isFounder ? "fir" : "ve",
+        processStage: "identified",
+        sourceChannel: candidate.source,
+        bio: candidate.eeaScore.summary,
+      });
+    } catch {
+      // silently fail — workspace.addPerson handles errors internally
+    }
+  };
 
   // Apply filters
   const filteredCandidates = candidates.filter(c => {
@@ -284,6 +499,13 @@ export default function FindFoundersTab({ workspace: _workspace }: Props) {
             </button>
           )}
           <button
+            onClick={() => setShowQueryConfig(!showQueryConfig)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            Configure
+          </button>
+          <button
             onClick={runPipeline}
             disabled={stage === "searching" || stage === "scoring" || stage === "enriching"}
             className="flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm"
@@ -296,12 +518,66 @@ export default function FindFoundersTab({ workspace: _workspace }: Props) {
             ) : (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                {stage === "searching" ? "Searching Exa..." : stage === "scoring" ? "Scoring EEA..." : "Enriching..."}
+                {stage === "searching" ? "Searching..." : stage === "scoring" ? "Scoring EEA..." : "Enriching..."}
               </>
             )}
           </button>
         </div>
       </div>
+
+      {/* Query Configuration */}
+      {showQueryConfig && (
+        <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">Search Configuration</h3>
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] text-muted-foreground">Results:</label>
+              <select
+                value={resultLimit}
+                onChange={e => setResultLimit(parseInt(e.target.value))}
+                className="text-xs px-2 py-1 bg-secondary/50 border border-border rounded-lg"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {SEARCH_QUERIES.map(q => (
+              <button
+                key={q.id}
+                onClick={() => setSelectedQuery(q.id)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
+                  selectedQuery === q.id
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-secondary/50 text-muted-foreground border-border hover:bg-secondary"
+                }`}
+              >
+                {q.label}
+                {q.provider === "github" && <span className="ml-1 opacity-60">(GitHub)</span>}
+              </button>
+            ))}
+          </div>
+
+          {selectedQuery === "custom" && (
+            <textarea
+              value={customQuery}
+              onChange={e => setCustomQuery(e.target.value)}
+              placeholder="Enter custom search query for Exa..."
+              rows={2}
+              className="w-full px-3 py-2 text-xs bg-secondary/50 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            />
+          )}
+
+          {selectedQuery !== "custom" && (
+            <div className="text-[10px] text-muted-foreground bg-secondary/30 rounded-lg px-3 py-2 font-mono">
+              {SEARCH_QUERIES.find(q => q.id === selectedQuery)?.query}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pipeline Progress */}
       {stage !== "idle" && (
@@ -340,6 +616,11 @@ export default function FindFoundersTab({ workspace: _workspace }: Props) {
               );
             })}
           </div>
+          {candidates.length > 0 && stage !== "complete" && (
+            <p className="text-[10px] text-muted-foreground mt-2">
+              {candidates.length} candidates found so far. Showing partial results...
+            </p>
+          )}
         </div>
       )}
 
@@ -347,7 +628,14 @@ export default function FindFoundersTab({ workspace: _workspace }: Props) {
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-xs text-red-700 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <div>{error}</div>
+          <div>
+            <div>{error}</div>
+            {error.includes("configured") && (
+              <p className="mt-1 text-red-600">
+                Go to <strong>Settings</strong> tab to configure your Exa and Parallel API keys.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -411,58 +699,60 @@ export default function FindFoundersTab({ workspace: _workspace }: Props) {
                       <User2 className="w-5 h-5 text-primary" />
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm font-bold text-foreground">{candidate.name}</h3>
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.classes}`}>
                           {badge.label}
                         </span>
+                        {!candidate.enriched && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-muted-foreground animate-pulse">
+                            Enriching...
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Building2 className="w-3 h-3" />
-                          {candidate.title} at {candidate.company}
-                        </span>
-                        <span className={`flex items-center gap-1 ${candidate.bayAreaConfirmed ? "text-blue-600 font-semibold" : ""}`}>
-                          <MapPin className="w-3 h-3" />
-                          {candidate.location}
-                          {candidate.bayAreaConfirmed && " ✓"}
-                        </span>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                        {(candidate.title || candidate.company) && (
+                          <span className="flex items-center gap-1">
+                            <Building2 className="w-3 h-3" />
+                            {[candidate.title, candidate.company].filter(Boolean).join(" at ")}
+                          </span>
+                        )}
+                        {candidate.location && (
+                          <span className={`flex items-center gap-1 ${candidate.bayAreaConfirmed ? "text-blue-600 font-semibold" : ""}`}>
+                            <MapPin className="w-3 h-3" />
+                            {candidate.location}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {/* Links */}
+                  <div className="flex items-center gap-1.5">
                     {candidate.linkedinUrl && (
-                      <a
-                        href={candidate.linkedinUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 rounded-lg bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-                      >
+                      <a href={candidate.linkedinUrl} target="_blank" rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
                         <Linkedin className="w-4 h-4" />
                       </a>
                     )}
                     {candidate.githubUrl && (
-                      <a
-                        href={candidate.githubUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 rounded-lg bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-                      >
+                      <a href={candidate.githubUrl} target="_blank" rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
                         <Github className="w-4 h-4" />
                       </a>
                     )}
                     {candidate.profileUrl && (
-                      <a
-                        href={candidate.profileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 rounded-lg bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-                      >
+                      <a href={candidate.profileUrl} target="_blank" rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
                         <ExternalLink className="w-4 h-4" />
                       </a>
                     )}
+                    <button
+                      onClick={() => importCandidate(candidate)}
+                      className="p-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors"
+                      title="Import to Talent Pool"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
@@ -483,25 +773,17 @@ export default function FindFoundersTab({ workspace: _workspace }: Props) {
                   </span>
                 </div>
 
-                {/* Badges Row */}
+                {/* Badges */}
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   {candidate.isFounder && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-                      Founder
-                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">Founder</span>
                   )}
                   {candidate.b2bFocus === "B2B" && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 border border-violet-200">
-                      B2B
-                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 border border-violet-200">B2B</span>
                   )}
                   {candidate.technicalDepth === "Deep technical" && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-700 border border-cyan-200">
-                      Deep Technical
-                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-700 border border-cyan-200">Deep Technical</span>
                   )}
-
-                  {/* Tier 1 signals as pills */}
                   {candidate.eeaScore.matchedTier1.map((signal, i) => (
                     <span key={`t1-${i}`} className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
                       {signal}
@@ -522,9 +804,14 @@ export default function FindFoundersTab({ workspace: _workspace }: Props) {
                 )}
 
                 {/* Summary */}
-                <p className="text-xs text-muted-foreground mb-3">{candidate.eeaScore.summary}</p>
+                <p className="text-xs text-muted-foreground mb-2">{candidate.eeaScore.summary}</p>
 
-                {/* Expandable Tier 2 signals */}
+                {/* Snippet */}
+                {candidate.snippet && (
+                  <p className="text-[11px] text-muted-foreground/80 mb-3 line-clamp-2">{candidate.snippet}</p>
+                )}
+
+                {/* Expandable Tier 2 */}
                 {candidate.eeaScore.matchedTier2.length > 0 && (
                   <button
                     onClick={() => toggleCard(candidate.id)}
@@ -575,18 +862,30 @@ export default function FindFoundersTab({ workspace: _workspace }: Props) {
         <div className="bg-card border border-border rounded-xl p-12 text-center">
           <Search className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-sm font-bold text-foreground mb-2">Ready to Find Founders</h3>
-          <p className="text-xs text-muted-foreground max-w-md mx-auto mb-6">
-            The pipeline searches Exa Websets for technically exceptional GenAI founders,
-            scores them against 150+ EEA signals, and enriches profiles with Parallel deep research.
-            Results are ranked by verifiable evidence of exceptional ability.
+          <p className="text-xs text-muted-foreground max-w-md mx-auto mb-4">
+            The pipeline searches via Exa for technically exceptional GenAI founders,
+            scores them against 150+ EEA signals, enriches top candidates with Parallel,
+            and ranks results by verifiable evidence of exceptional ability.
           </p>
-          <button
-            onClick={runPipeline}
-            className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
-          >
-            <Search className="w-4 h-4" />
-            Find Founders
-          </button>
+          <p className="text-[10px] text-muted-foreground max-w-md mx-auto mb-6">
+            Requires Exa API key configured in Settings. Parallel enrichment is optional but recommended.
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => { setShowQueryConfig(true); }}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-xl bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+              Configure Search
+            </button>
+            <button
+              onClick={runPipeline}
+              className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
+            >
+              <Search className="w-4 h-4" />
+              Find Founders
+            </button>
+          </div>
         </div>
       )}
     </div>
