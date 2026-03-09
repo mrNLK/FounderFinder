@@ -766,6 +766,33 @@ export default function TalentPoolTab({ workspace }: Props) {
 
                 {scoringPersonId === person.id && (
                   <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                    {(() => {
+                      const eeaMeta = person.metadata as Record<string, unknown> | null;
+                      const eeaScore = eeaMeta?.eeaScore as number | undefined;
+                      const eeaTier = eeaMeta?.eeaTier as number | undefined;
+                      const eeaSignals = eeaMeta?.eeaSignals as string | undefined;
+                      const eeaSummary = eeaMeta?.eeaSummary as string | undefined;
+                      if (eeaScore !== undefined || eeaSignals) {
+                        return (
+                          <div className="mb-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">EEA Signal</span>
+                              {eeaTier && (
+                                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${eeaTier === 1 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-primary/10 text-primary border border-primary/20"}`}>
+                                  Tier {eeaTier}
+                                </span>
+                              )}
+                              {eeaScore !== undefined && (
+                                <span className="text-[10px] text-muted-foreground">{eeaScore}/100</span>
+                              )}
+                            </div>
+                            {eeaSignals && <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">{eeaSignals}</p>}
+                            {eeaSummary && <p className="mt-1 text-[11px] text-muted-foreground/70 leading-relaxed line-clamp-1">{eeaSummary}</p>}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     <div className="grid gap-3 md:grid-cols-2">
                       {workspace.settings.evaluationCriteria.map((criterion: AiFundEvaluationCriterion) => (
                         <div key={criterion.id}>

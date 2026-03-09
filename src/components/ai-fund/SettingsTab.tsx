@@ -557,6 +557,85 @@ export default function AiFundSettingsTab({ workspace }: Props) {
             </div>
           ))}
         </div>
+
+        <div className="mt-4 space-y-3">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Role-Adjusted Weights</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-border bg-background p-4">
+              <p className="mb-2 text-sm font-medium text-foreground">FIR (Founder / Idea Realizer)</p>
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="flex justify-between"><span>AI Excellence</span><span className="text-primary">38%</span></div>
+                <div className="flex justify-between"><span>Technical Ability</span><span className="text-primary">28%</span></div>
+                <div className="flex justify-between"><span>Product Instinct</span><span className="text-primary">20%</span></div>
+                <div className="flex justify-between"><span>Leadership Potential</span><span className="text-primary">14%</span></div>
+              </div>
+            </div>
+            <div className="rounded-lg border border-border bg-background p-4">
+              <p className="mb-2 text-sm font-medium text-foreground">VE (Venture Executive)</p>
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="flex justify-between"><span>AI Excellence</span><span className="text-primary">38%</span></div>
+                <div className="flex justify-between"><span>Technical Ability</span><span className="text-primary">35%</span></div>
+                <div className="flex justify-between"><span>Product Instinct</span><span className="text-primary">12%</span></div>
+                <div className="flex justify-between"><span>Leadership Potential</span><span className="text-primary">15%</span></div>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mt-4">Score Thresholds (1-4 Scale)</p>
+          <div className="rounded-lg border border-border bg-background p-4">
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center gap-2"><span className="inline-block h-2 w-2 rounded-full bg-emerald-400" /><span className="text-emerald-400 font-medium w-20">3.5 - 4.0</span><span className="text-muted-foreground">Exceptional</span></div>
+              <div className="flex items-center gap-2"><span className="inline-block h-2 w-2 rounded-full bg-primary" /><span className="text-primary font-medium w-20">2.8 - 3.4</span><span className="text-muted-foreground">Strong</span></div>
+              <div className="flex items-center gap-2"><span className="inline-block h-2 w-2 rounded-full bg-yellow-400" /><span className="text-yellow-400 font-medium w-20">2.0 - 2.7</span><span className="text-muted-foreground">Moderate</span></div>
+              <div className="flex items-center gap-2"><span className="inline-block h-2 w-2 rounded-full bg-orange-400" /><span className="text-orange-400 font-medium w-20">1.5 - 1.9</span><span className="text-muted-foreground">Below Bar</span></div>
+              <div className="flex items-center gap-2"><span className="inline-block h-2 w-2 rounded-full bg-destructive" /><span className="text-destructive font-medium w-20">&lt; 1.5</span><span className="text-muted-foreground">No Hire</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <Database className="h-4 w-4 text-primary" />
+          <h2 className="text-sm font-semibold text-foreground">EEA Scoring (Automated Pipeline)</h2>
+        </div>
+        <p className="mb-4 text-xs text-muted-foreground">
+          Evidence of Exceptional Ability scoring runs automatically during the FounderFinder pipeline. Candidates are scored 0-100 based on verifiable achievement signals detected in their profiles.
+        </p>
+
+        <div className="space-y-3">
+          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4">
+            <p className="mb-2 text-sm font-medium text-emerald-400">Tier 1 Signals (Score starts at 85)</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              IOI/IMO Gold, ICPC World Finals, Kaggle Grandmaster, NeurIPS/ICML/ICLR Best Paper,
+              Hertz/Knight-Hennessy/Thiel Fellowship, YC/a16z Speedrun, prior exits &gt;$50M,
+              major OSS (10k+ stars), major HuggingFace contributors. 49 patterns total.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+            <p className="mb-2 text-sm font-medium text-primary">Tier 2 Signals (Score starts at 40-48)</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              NeurIPS/ICML/ICLR/CVPR publications, IOI Silver/Bronze, USAMO/Putnam,
+              Codeforces Grandmaster, Kaggle Master, VC-backed Series A/B,
+              hackathon winners, top university affiliations. 30 patterns total.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-border bg-background p-4">
+            <p className="mb-2 text-sm font-medium text-foreground">Bonuses &amp; Penalties</p>
+            <div className="grid gap-2 md:grid-cols-2 text-xs text-muted-foreground">
+              <div>
+                <p className="font-medium text-foreground mb-1">Bonuses (+5 each)</p>
+                <p>Bay Area location, Founder/co-founder evidence, B2B/enterprise focus</p>
+              </div>
+              <div>
+                <p className="font-medium text-foreground mb-1">False Positive Penalties</p>
+                <p>Workshop papers, Findings of ACL/EMNLP, TEDx, IBM patent volume, Forbes 30U30 (non-Enterprise Tech), Kaggle Expert/Contributor, sponsor bounty prizes, provisional patents</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
