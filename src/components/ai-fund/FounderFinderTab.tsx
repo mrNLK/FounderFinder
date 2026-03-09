@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Filter,
   X,
+  UserPlus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { scoreCandidate } from "@/lib/eea-scorer";
@@ -33,6 +34,7 @@ import type {
   HarmonicSourceResponse,
   SourceChannel,
 } from "@/types/founder-finder";
+import type { AiFundPerson } from "@/types/ai-fund";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -197,8 +199,66 @@ function getSourceLabel(candidate: CandidateResult): string | null {
 // Candidate card component
 // ---------------------------------------------------------------------------
 
-function CandidateCard({ candidate }: { candidate: CandidateResult }) {
+function candidateToPersonFields(c: CandidateResult): Partial<AiFundPerson> {
+  const eea = c.eeaScore;
+  return {
+    fullName: c.name,
+    currentRole: c.title || null,
+    currentCompany: c.company || null,
+    linkedinUrl: c.linkedinUrl || null,
+    githubUrl: c.githubUrl || null,
+    location: c.location || null,
+    bio: eea.summary || null,
+    personType: c.isFounder ? "fir" : "both",
+    processStage: "identified",
+    sourceChannel: "founderfinder",
+    tags: [
+      ...(eea.tier === 1 ? ["tier-1"] : eea.tier === 2 ? ["tier-2"] : []),
+      ...(c.b2bFocus === "B2B" ? ["b2b"] : []),
+      ...(c.technicalDepth === "Deep technical" ? ["deep-technical"] : []),
+    ],
+    metadata: {
+      eeaScore: eea.score,
+      eeaTier: eea.tier,
+      eeaSignals: [
+        ...eea.matchedTier1.map((s) => `[T1] ${s}`),
+        ...eea.matchedTier2.map((s) => `[T2] ${s}`),
+      ].join("; "),
+      eeaSummary: eea.summary,
+      eeaMatchedTier1: eea.matchedTier1,
+      eeaMatchedTier2: eea.matchedTier2,
+      eeaFalsePositiveFlags: eea.falsePositiveFlags,
+      b2bFocus: c.b2bFocus,
+      technicalDepth: c.technicalDepth,
+      isFounder: c.isFounder,
+      sourceUrl: c.profileUrl,
+      outreachHook: c.outreachHook || null,
+      fundingStage: c.fundingStage || null,
+      fundingTotal: c.fundingTotal || null,
+      headcount: c.headcount || null,
+      huggingFace: c.huggingFace || [],
+      papersWithCode: c.papersWithCode || [],
+      replicateSignals: c.replicateSignals || [],
+      founderAvailabilitySignals: c.founderAvailabilitySignals || [],
+      selectiveProgramSignals: c.selectiveProgramSignals || [],
+      builtInPublicSignals: c.builtInPublicSignals || [],
+      weightsAndBiases: c.weightsAndBiases || [],
+      devpostSignals: c.devpostSignals || [],
+      andrewAdjacency: c.andrewAdjacency || [],
+    },
+  };
+}
+
+function CandidateCard({
+  candidate,
+  onAddPerson,
+}: {
+  candidate: CandidateResult;
+  onAddPerson?: (fields: Partial<AiFundPerson>) => Promise<AiFundPerson | null>;
+}) {
   const [copiedHook, setCopiedHook] = useState(false);
+  const [addedToPool, setAddedToPool] = useState(false);
+  const [addingToPool, setAddingToPool] = useState(false);
   const eea = candidate.eeaScore;
   const sourceLabel = getSourceLabel(candidate);
   const primaryHook = candidate.outreachHook || eea.summary || `${candidate.name} at ${candidate.company}`;
@@ -208,6 +268,19 @@ function CandidateCard({ candidate }: { candidate: CandidateResult }) {
     setCopiedHook(true);
     setTimeout(() => setCopiedHook(false), 2000);
   }, [primaryHook]);
+
+  const handleAddToPool = useCallback(async () => {
+    if (!onAddPerson || addingToPool || addedToPool) return;
+    setAddingToPool(true);
+    try {
+      const person = await onAddPerson(candidateToPersonFields(candidate));
+      if (person) {
+        setAddedToPool(true);
+      }
+    } finally {
+      setAddingToPool(false);
+    }
+  }, [onAddPerson, candidate, addingToPool, addedToPool]);
 
   return (
     <div className="rounded-xl border border-zinc-800/60 bg-[#13131a] p-4 space-y-3 hover:border-zinc-700/60 transition-colors">
@@ -423,6 +496,28 @@ function CandidateCard({ candidate }: { candidate: CandidateResult }) {
             Source
           </a>
         )}
+        {onAddPerson && (
+          <button
+            onClick={handleAddToPool}
+            disabled={addingToPool || addedToPool}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+              addedToPool
+                ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 cursor-default"
+                : addingToPool
+                  ? "text-zinc-500 bg-zinc-800/50 cursor-wait"
+                  : "text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20"
+            }`}
+          >
+            {addedToPool ? (
+              <Check className="w-3 h-3" />
+            ) : addingToPool ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <UserPlus className="w-3 h-3" />
+            )}
+            {addedToPool ? "In Pool" : addingToPool ? "Adding..." : "Add to Pool"}
+          </button>
+        )}
         <button
           onClick={handleCopyHook}
           className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-800 transition-colors ml-auto"
@@ -439,7 +534,11 @@ function CandidateCard({ candidate }: { candidate: CandidateResult }) {
 // Main Tab
 // ---------------------------------------------------------------------------
 
-export default function FounderFinderTab() {
+export default function FounderFinderTab({
+  onAddPerson,
+}: {
+  onAddPerson?: (fields: Partial<AiFundPerson>) => Promise<AiFundPerson | null>;
+}) {
   const [pipeline, setPipeline] = useState<PipelineState>({ step: "idle", message: "" });
   const [candidates, setCandidates] = useState<CandidateResult[]>([]);
   const [filters, setFilters] = useState({
@@ -1050,7 +1149,7 @@ export default function FounderFinderTab() {
       {filtered.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {filtered.map((c, i) => (
-            <CandidateCard key={`${c.name}-${i}`} candidate={c} />
+            <CandidateCard key={`${c.name}-${i}`} candidate={c} onAddPerson={onAddPerson} />
           ))}
         </div>
       )}

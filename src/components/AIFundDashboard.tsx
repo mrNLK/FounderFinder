@@ -17,6 +17,7 @@ import {
   FileCheck,
   Zap,
   Settings,
+  Search,
 } from "lucide-react";
 
 // Tab components
@@ -29,6 +30,7 @@ import ResidencyTrackerTab from "@/components/ai-fund/ResidencyTrackerTab";
 import InvestmentReviewTab from "@/components/ai-fund/InvestmentReviewTab";
 import IntelligenceTab from "@/components/ai-fund/IntelligenceTab";
 import AiFundSettingsTab from "@/components/ai-fund/SettingsTab";
+import FounderFinderTab from "@/components/ai-fund/FounderFinderTab";
 
 type AiFundTab =
   | "overview"
@@ -39,6 +41,7 @@ type AiFundTab =
   | "residencies"
   | "investment"
   | "intelligence"
+  | "founderfinder"
   | "settings";
 
 const TABS: { id: AiFundTab; label: string; icon: React.ElementType }[] = [
@@ -50,6 +53,7 @@ const TABS: { id: AiFundTab; label: string; icon: React.ElementType }[] = [
   { id: "residencies", label: "Residencies", icon: Home },
   { id: "investment", label: "Investment", icon: FileCheck },
   { id: "intelligence", label: "Intelligence", icon: Zap },
+  { id: "founderfinder", label: "Founder Finder", icon: Search },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -75,6 +79,8 @@ export default function AIFundDashboard() {
         return <InvestmentReviewTab workspace={workspace} />;
       case "intelligence":
         return <IntelligenceTab workspace={workspace} />;
+      case "founderfinder":
+        return <FounderFinderTab onAddPerson={workspace.addPerson} />;
       case "settings":
         return <AiFundSettingsTab workspace={workspace} />;
       default:
