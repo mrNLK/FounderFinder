@@ -2,6 +2,7 @@ import { authenticateAiFundUser, AuthGuardError } from "../_shared/auth-guard.ts
 import {
   buildPublicAiFundSettings,
   getHarmonicBaseUrl,
+  getHuggingFaceModel,
   getProviderApiKey,
   getProviderSource,
   getUserSettingsRow,
@@ -170,6 +171,14 @@ function buildUpdatedProviderState(
       const nextModel = asString(update.model);
       currentPreferences.anthropic = nextModel
         ? { ...anthropicPreferences, model: nextModel }
+        : {};
+    }
+
+    if (provider === "huggingface" && "model" in update) {
+      const hfPreferences = asRecord(currentPreferences.huggingface);
+      const nextModel = asString(update.model);
+      currentPreferences.huggingface = nextModel
+        ? { ...hfPreferences, model: nextModel }
         : {};
     }
   }
@@ -630,6 +639,53 @@ async function testAnthropicIntegration(
   };
 }
 
+async function testHuggingFaceIntegration(
+  settingsRow: ReturnType<typeof buildEphemeralSettingsRow>,
+): Promise<IntegrationTestResult> {
+  const apiKey = getProviderApiKey(settingsRow, "huggingface");
+  if (!apiKey) {
+    return {
+      provider: "huggingface",
+      ok: false,
+      checkedAt: new Date().toISOString(),
+      message: "Missing Hugging Face API token",
+      metadata: {
+        source: getProviderSource(settingsRow, "huggingface"),
+      },
+    };
+  }
+
+  const model = getHuggingFaceModel(settingsRow);
+  const response = await fetch(
+    `https://api-inference.huggingface.co/models/${model}`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        inputs: "test embedding",
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Hugging Face test failed: ${response.status} ${await response.text()}`);
+  }
+
+  return {
+    provider: "huggingface",
+    ok: true,
+    checkedAt: new Date().toISOString(),
+    message: "Hugging Face Inference API responded successfully",
+    metadata: {
+      source: getProviderSource(settingsRow, "huggingface"),
+      model,
+    },
+  };
+}
+
 async function runIntegrationTest(
   provider: ProviderKey,
   settingsRow: ReturnType<typeof buildEphemeralSettingsRow>,
@@ -645,6 +701,8 @@ async function runIntegrationTest(
       return await testParallelIntegration(settingsRow);
     case "anthropic":
       return await testAnthropicIntegration(settingsRow);
+    case "huggingface":
+      return await testHuggingFaceIntegration(settingsRow);
   }
 }
 

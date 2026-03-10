@@ -21,6 +21,7 @@ interface IntegrationDraftState {
   apiKeys: Partial<Record<IntegrationProvider, string>>;
   harmonicBaseUrl: string;
   anthropicModel: string;
+  huggingfaceModel: string;
 }
 
 function buildInitialDraft(workspace: AiFundWorkspace): IntegrationDraftState {
@@ -28,6 +29,7 @@ function buildInitialDraft(workspace: AiFundWorkspace): IntegrationDraftState {
     apiKeys: {},
     harmonicBaseUrl: workspace.settings.integrations.harmonic.baseUrl || "",
     anthropicModel: workspace.settings.integrations.anthropic.model || "",
+    huggingfaceModel: workspace.settings.integrations.huggingface.model || "",
   };
 }
 
@@ -36,6 +38,7 @@ function buildDraftFromSettings(settings: AiFundAppSettings): IntegrationDraftSt
     apiKeys: {},
     harmonicBaseUrl: settings.integrations.harmonic.baseUrl || "",
     anthropicModel: settings.integrations.anthropic.model || "",
+    huggingfaceModel: settings.integrations.huggingface.model || "",
   };
 }
 
@@ -108,7 +111,7 @@ export default function AiFundSettingsTab({ workspace }: Props) {
 
   const updateIntegrationDraft = (
     provider: IntegrationProvider,
-    updates: Partial<Pick<IntegrationDraftState, "harmonicBaseUrl" | "anthropicModel">>,
+    updates: Partial<Pick<IntegrationDraftState, "harmonicBaseUrl" | "anthropicModel" | "huggingfaceModel">>,
   ): void => {
     setDraft((prev) => ({ ...prev, ...updates }));
     setTestResults((prev) => {
@@ -149,6 +152,10 @@ export default function AiFundSettingsTab({ workspace }: Props) {
           ...(draft.apiKeys.anthropic?.trim() ? { apiKey: draft.apiKeys.anthropic.trim() } : {}),
           model: draft.anthropicModel.trim() || null,
         },
+        huggingface: {
+          ...(draft.apiKeys.huggingface?.trim() ? { apiKey: draft.apiKeys.huggingface.trim() } : {}),
+          model: draft.huggingfaceModel.trim() || null,
+        },
       };
 
       await workspace.updateSettings({
@@ -168,6 +175,10 @@ export default function AiFundSettingsTab({ workspace }: Props) {
           anthropic: {
             ...workspace.settings.integrations.anthropic,
             model: draft.anthropicModel.trim() || null,
+          },
+          huggingface: {
+            ...workspace.settings.integrations.huggingface,
+            model: draft.huggingfaceModel.trim() || null,
           },
         },
       }));
@@ -199,6 +210,13 @@ export default function AiFundSettingsTab({ workspace }: Props) {
           anthropic: {
             apiKey: draft.apiKeys.anthropic?.trim() || undefined,
             model: draft.anthropicModel.trim() || null,
+          },
+        };
+      case "huggingface":
+        return {
+          huggingface: {
+            apiKey: draft.apiKeys.huggingface?.trim() || undefined,
+            model: draft.huggingfaceModel.trim() || null,
           },
         };
       case "exa":
@@ -289,7 +307,7 @@ export default function AiFundSettingsTab({ workspace }: Props) {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {(["harmonic", "exa", "github", "parallel", "anthropic"] as IntegrationProvider[]).map((provider) => {
+          {(["harmonic", "exa", "github", "parallel", "anthropic", "huggingface"] as IntegrationProvider[]).map((provider) => {
             const config = workspace.settings.integrations[provider];
             return (
               <div key={provider} className="rounded-lg border border-border bg-background p-4">
@@ -367,6 +385,19 @@ export default function AiFundSettingsTab({ workspace }: Props) {
                         value={draft.anthropicModel}
                         onChange={(event) => updateIntegrationDraft("anthropic", { anthropicModel: event.target.value })}
                         placeholder="claude-sonnet"
+                        className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                  )}
+
+                  {provider === "huggingface" && (
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">Embedding Model</label>
+                      <input
+                        type="text"
+                        value={draft.huggingfaceModel}
+                        onChange={(event) => updateIntegrationDraft("huggingface", { huggingfaceModel: event.target.value })}
+                        placeholder="BAAI/bge-small-en-v1.5"
                         className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                       />
                     </div>

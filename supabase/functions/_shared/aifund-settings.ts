@@ -1,6 +1,6 @@
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
-export const PROVIDER_KEYS = ["harmonic", "exa", "github", "parallel", "anthropic"] as const;
+export const PROVIDER_KEYS = ["harmonic", "exa", "github", "parallel", "anthropic", "huggingface"] as const;
 export type ProviderKey = typeof PROVIDER_KEYS[number];
 
 export type ProviderSource = "saved" | "project_env" | "missing";
@@ -14,6 +14,9 @@ export interface StoredProviderPreferences {
     baseUrl?: string | null;
   };
   anthropic?: {
+    model?: string | null;
+  };
+  huggingface?: {
     model?: string | null;
   };
 }
@@ -220,6 +223,9 @@ export function getStoredProviderPreferences(row: UserSettingsRow | null): Store
     anthropic: {
       model: asString(asRecord(preferences.anthropic).model),
     },
+    huggingface: {
+      model: asString(asRecord(preferences.huggingface).model),
+    },
   };
 }
 
@@ -235,6 +241,8 @@ function getEnvApiKey(provider: ProviderKey): string | null {
       return asString(Deno.env.get("PARALLEL_API_KEY"));
     case "anthropic":
       return asString(Deno.env.get("ANTHROPIC_API_KEY"));
+    case "huggingface":
+      return asString(Deno.env.get("HUGGINGFACE_API_KEY")) || asString(Deno.env.get("HF_TOKEN"));
   }
 }
 
@@ -266,6 +274,14 @@ export function getHarmonicBaseUrl(row: UserSettingsRow | null): string {
 export function getAnthropicModel(row: UserSettingsRow | null): string | null {
   return getStoredProviderPreferences(row).anthropic?.model ||
     asString(Deno.env.get("ANTHROPIC_MODEL"));
+}
+
+export const DEFAULT_HF_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5";
+
+export function getHuggingFaceModel(row: UserSettingsRow | null): string {
+  return getStoredProviderPreferences(row).huggingface?.model ||
+    asString(Deno.env.get("HF_EMBEDDING_MODEL")) ||
+    DEFAULT_HF_EMBEDDING_MODEL;
 }
 
 export function mergeSourcingChannels(value: unknown): SourcingChannelConfig[] {
@@ -338,6 +354,7 @@ export function buildPublicAiFundSettings(row: UserSettingsRow | null): PublicAi
     github: "GitHub",
     parallel: "Parallel",
     anthropic: "Claude",
+    huggingface: "Hugging Face",
   };
 
   for (const provider of PROVIDER_KEYS) {
@@ -352,6 +369,7 @@ export function buildPublicAiFundSettings(row: UserSettingsRow | null): PublicAi
 
   integrations.harmonic.baseUrl = getHarmonicBaseUrl(row);
   integrations.anthropic.model = getAnthropicModel(row);
+  integrations.huggingface.model = getHuggingFaceModel(row);
 
   return {
     integrations,

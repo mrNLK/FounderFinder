@@ -80,7 +80,7 @@ export type IntelligenceRunStatus =
 
 export type IntelligenceProvider = "exa" | "parallel" | "github" | "harmonic" | "manual";
 
-export type IntegrationProvider = "harmonic" | "exa" | "github" | "parallel" | "anthropic";
+export type IntegrationProvider = "harmonic" | "exa" | "github" | "parallel" | "anthropic" | "huggingface";
 
 export type SourcingChannelProvider = "exa" | "parallel" | "github";
 
