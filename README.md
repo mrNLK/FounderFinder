@@ -1,73 +1,88 @@
-# React + TypeScript + Vite
+# Founder Finder
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AI-powered venture creation pipeline for discovering, evaluating, and engaging exceptional founders. Built as a standalone tool from the AI Fund ecosystem.
 
-Currently, two official plugins are available:
+## What It Does
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Founder Finder helps venture teams identify and assess technical founders through an integrated dashboard:
 
-## React Compiler
+- **Find Founders** — Search for founders using Exa and Parallel APIs, surfacing candidates by their real-world work and signals
+- **Concept Pipeline** — Track venture concepts from ideation through evaluation stages
+- **EEA Scoring** — Evidence of Exceptional Ability scoring engine that evaluates founders on technical depth, leadership signals, and domain expertise
+- **Intelligence** — Gather and synthesize market intelligence with Harmonic integration
+- **Talent Pool** — Maintain a curated pool of founder candidates across active searches
+- **Matching Board** — Match founders to venture concepts based on skills, interests, and EEA signals
+- **Investment Review** — Structured review workflow for evaluating founder-concept fit
+- **Engagement Inbox** — Track outreach and founder engagement status
+- **Residency Tracker** — Monitor founders through residency and incubation programs
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech Stack
 
-## Expanding the ESLint configuration
+- **Frontend:** React 19, TypeScript, Vite 7, Tailwind CSS 4
+- **Backend:** Supabase (PostgreSQL, Edge Functions, Auth)
+- **APIs:** Exa, Parallel, Harmonic
+- **Icons:** Lucide React
+- **Hosting:** Vercel
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Getting Started
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Prerequisites
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- Node.js 18+
+- A Supabase project
+- API keys for external services (Exa, Parallel, Harmonic)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Setup
+
+```bash
+# Clone the repo
+git clone https://github.com/mrNLK/FounderFinder.git
+cd FounderFinder
+
+# Install dependencies
+npm install
+
+# Configure environment variables
+cp .env.example .env
+# Edit .env with your Supabase credentials
+
+# Start the dev server
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Environment Variables
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Copy `.env.example` to `.env` and fill in your values:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| Variable | Purpose |
+|---|---|
+| `VITE_SUPABASE_URL` | Your Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key |
+
+### Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start dev server (localhost:5173) |
+| `npm run build` | Production build |
+| `npm run lint` | Run ESLint |
+| `npm run preview` | Preview production build locally |
+
+## Project Structure
+
 ```
+src/
+├── components/
+│   └── ai-fund/       # Dashboard tab components (Find Founders, Pipeline, EEA, etc.)
+├── hooks/              # Custom React hooks
+├── integrations/
+│   └── supabase/       # Supabase client and type definitions
+├── lib/                # API helpers, scoring engines, settings
+└── types/              # TypeScript type definitions
+supabase/
+└── functions/          # Supabase Edge Functions
+```
+
+## License
+
+All rights reserved.
