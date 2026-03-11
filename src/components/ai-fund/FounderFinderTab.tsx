@@ -155,6 +155,8 @@ export default function FounderFinderTab({ workspace }: Props) {
 
   // Poll interval ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const pollCountRef = useRef(0);
+      const MAX_POLL_ATTEMPTS = 60; // 60 × 8s = 8 minutes max
 
   // Cleanup poll on unmount
   useEffect(() => {
@@ -245,10 +247,19 @@ export default function FounderFinderTab({ workspace }: Props) {
         const enrichResult = await startFounderEnrich(enrichInput);
         setTaskGroupId(enrichResult.taskGroupId);
 
+                  pollCountRef.current = 0;
         // Poll for enrichment completion
         pollRef.current = setInterval(async () => {
           try {
             const status = await pollFounderEnrich(enrichResult.taskGroupId);
+                          pollCountRef.current += 1;
+                                        if (pollCountRef.current >= MAX_POLL_ATTEMPTS) {
+                                                        if (pollRef.current) clearInterval(pollRef.current);
+                                                                        pollRef.current = null;
+                                                                                        setEnrichmentFailed(true);
+                                                                                                        setStep("complete");
+                                                                                                                        return;
+                                                                                                                                      }
 
             if (status.status === "completed" && status.results) {
               if (pollRef.current) clearInterval(pollRef.current);
