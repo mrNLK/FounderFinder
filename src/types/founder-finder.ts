@@ -16,6 +16,7 @@ export type EEAScore = {
   matchedTier2: string[];
   falsePositiveFlags: string[];
   summary: string;
+  hfClassifications?: Array<{ signal: string; label: string; score: number }>;
 };
 
 // ---------------------------------------------------------------------------

@@ -3,9 +3,71 @@
  *
  * Uses the free Inference API to compute embeddings for
  * candidate-to-concept semantic matching on the Matching Board.
+ * Also provides a client wrapper for zero-shot signal classification.
  */
 
+import { supabase } from "@/integrations/supabase/client";
+
 const DEFAULT_MODEL = "BAAI/bge-small-en-v1.5";
+
+// ---------------------------------------------------------------------------
+// Named Entity Recognition types & client wrapper
+// ---------------------------------------------------------------------------
+
+export interface ExtractedEntities {
+  text: string;
+  organizations: string[];
+  persons: string[];
+  locations: string[];
+  miscellaneous: string[];
+}
+
+/**
+ * Extract named entities (ORG, PER, LOC, MISC) from free-text strings
+ * using the extract-entities edge function (dslim/bert-base-NER).
+ */
+export async function extractEntities(
+  texts: string[],
+): Promise<ExtractedEntities[]> {
+  const { data, error } = await supabase.functions.invoke("extract-entities", {
+    body: { texts },
+  });
+
+  if (error) {
+    throw new Error(`extract-entities invocation failed: ${error.message}`);
+  }
+
+  return data.entities as ExtractedEntities[];
+}
+
+// ---------------------------------------------------------------------------
+// Signal Classification (via classify-signals edge function)
+// ---------------------------------------------------------------------------
+
+export type SignalClassification = {
+  signal: string;
+  label: string;
+  score: number;
+};
+
+/**
+ * Classify raw signal text strings using HF zero-shot classification.
+ * Calls the `classify-signals` Supabase Edge Function which uses
+ * facebook/bart-large-mnli under the hood.
+ */
+export async function classifySignals(
+  signals: string[],
+): Promise<SignalClassification[]> {
+  const { data, error } = await supabase.functions.invoke("classify-signals", {
+    body: { signals },
+  });
+
+  if (error) {
+    throw new Error(`classify-signals failed: ${error.message}`);
+  }
+
+  return (data as { classifications: SignalClassification[] }).classifications;
+}
 
 // ---------------------------------------------------------------------------
 // Core: compute embeddings via HF Inference API
@@ -117,6 +179,49 @@ export function buildConceptEmbeddingText(concept: {
  *
  * Returns scores sorted by similarity (descending).
  */
+// ---------------------------------------------------------------------------
+// Near-duplicate detection via smart-dedup edge function
+// ---------------------------------------------------------------------------
+
+export type DuplicateGroup = { ids: string[]; similarity: number };
+
+interface DedupCandidate {
+  id: string;
+  name: string;
+  company: string;
+  title: string;
+  location: string;
+}
+
+/**
+ * Call the smart-dedup edge function to find near-duplicate candidates
+ * using HuggingFace embedding cosine similarity.
+ *
+ * Returns groups of candidate IDs that are near-duplicates (similarity >= 0.92).
+ */
+export async function findDuplicateCandidates(
+  candidates: DedupCandidate[],
+  supabase: { functions: { invoke: (name: string, options: { body: unknown }) => Promise<{ data: unknown; error: unknown }> } },
+): Promise<DuplicateGroup[]> {
+  if (candidates.length < 2) return [];
+
+  const { data, error } = await supabase.functions.invoke("smart-dedup", {
+    body: { candidates },
+  });
+
+  if (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`smart-dedup failed: ${message}`);
+  }
+
+  const result = data as { duplicateGroups: DuplicateGroup[] } | null;
+  return result?.duplicateGroups ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Semantic match: rank candidates against a concept
+// ---------------------------------------------------------------------------
+
 export async function rankCandidatesForConcept(
   concept: {
     name: string;
@@ -154,4 +259,64 @@ export async function rankCandidatesForConcept(
 
   scores.sort((a, b) => b.similarity - a.similarity);
   return scores;
+}
+
+// ---------------------------------------------------------------------------
+// Zero-shot signal classification via classify-signals edge function
+// ---------------------------------------------------------------------------
+
+export interface SignalClassification {
+  signal: string;
+  label: string;
+  score: number;
+}
+
+export async function classifySignals(
+  signals: string[],
+  supabase: { functions: { invoke: (name: string, options: { body: unknown }) => Promise<{ data: unknown; error: unknown }> } },
+): Promise<SignalClassification[]> {
+  if (signals.length === 0) return [];
+
+  const { data, error } = await supabase.functions.invoke("classify-signals", {
+    body: { signals },
+  });
+
+  if (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`classify-signals failed: ${message}`);
+  }
+
+  const result = data as { classifications: SignalClassification[] } | null;
+  return result?.classifications ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// NER entity extraction via extract-entities edge function
+// ---------------------------------------------------------------------------
+
+export interface ExtractedEntities {
+  text: string;
+  organizations: string[];
+  persons: string[];
+  locations: string[];
+  miscellaneous: string[];
+}
+
+export async function extractEntities(
+  texts: string[],
+  supabase: { functions: { invoke: (name: string, options: { body: unknown }) => Promise<{ data: unknown; error: unknown }> } },
+): Promise<ExtractedEntities[]> {
+  if (texts.length === 0) return [];
+
+  const { data, error } = await supabase.functions.invoke("extract-entities", {
+    body: { texts },
+  });
+
+  if (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`extract-entities failed: ${message}`);
+  }
+
+  const result = data as { entities: ExtractedEntities[] } | null;
+  return result?.entities ?? [];
 }

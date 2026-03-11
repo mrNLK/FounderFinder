@@ -9,16 +9,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Brain,
   CheckCircle,
   ChevronDown,
   ChevronUp,
   ClipboardCopy,
+  Copy,
   Download,
   ExternalLink,
   Filter,
   Info,
   Loader2,
   Search,
+  Sparkles,
+  Tags,
   Upload,
   Users,
   X,
@@ -43,6 +47,9 @@ import {
   downloadCsv,
 } from "@/lib/founder-finder";
 import { normalizeComparableUrl } from "@/lib/url-utils";
+import { supabase } from "@/integrations/supabase/client";
+import type { DuplicateGroup, SignalClassification, ExtractedEntities } from "@/lib/huggingface";
+import { findDuplicateCandidates, classifySignals, extractEntities } from "@/lib/huggingface";
 
 interface Props {
   workspace: AiFundWorkspace;
@@ -152,6 +159,13 @@ export default function FounderFinderTab({ workspace }: Props) {
 
   // Enrichment outreach hooks (populated after Parallel enrichment)
   const [outreachHooks, setOutreachHooks] = useState<Record<string, string>>({});
+
+  // HF enhancement state
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
+  const [hfClassifications, setHfClassifications] = useState<SignalClassification[]>([]);
+  const [hfEntities, setHfEntities] = useState<ExtractedEntities[]>([]);
+  const [hfAction, setHfAction] = useState<"dedup" | "classify" | "ner" | null>(null);
+  const [hfError, setHfError] = useState<string | null>(null);
 
   // Poll interval ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -426,6 +440,72 @@ export default function FounderFinderTab({ workspace }: Props) {
   };
 
   // ---------------------------------------------------------------------------
+  // HF Enhancement Handlers
+  // ---------------------------------------------------------------------------
+
+  const hfConfigured = useMemo(() => {
+    const hf = workspace.settings?.integrations?.huggingface;
+    return !!hf?.configured;
+  }, [workspace.settings]);
+
+  const handleFindDuplicates = useCallback(async () => {
+    if (!hfConfigured || candidates.length < 2) return;
+    setHfAction("dedup");
+    setHfError(null);
+    try {
+      const dedupInput = candidates.map((c, i) => ({
+        id: c.profileUrl || String(i),
+        name: c.name,
+        company: c.company,
+        title: c.title,
+        location: c.location,
+      }));
+      const groups = await findDuplicateCandidates(dedupInput, supabase);
+      setDuplicateGroups(groups);
+    } catch (err: unknown) {
+      setHfError(err instanceof Error ? err.message : "Dedup failed");
+    } finally {
+      setHfAction(null);
+    }
+  }, [candidates, hfConfigured]);
+
+  const handleClassifySignals = useCallback(async () => {
+    if (!hfConfigured || candidates.length === 0) return;
+    setHfAction("classify");
+    setHfError(null);
+    try {
+      const signals = candidates
+        .flatMap((c) => c.eeaSignals.split(" | ").map((s) => s.trim()))
+        .filter((s) => s.length > 10)
+        .slice(0, 50);
+      const classifications = await classifySignals(signals, supabase);
+      setHfClassifications(classifications);
+    } catch (err: unknown) {
+      setHfError(err instanceof Error ? err.message : "Classification failed");
+    } finally {
+      setHfAction(null);
+    }
+  }, [candidates, hfConfigured]);
+
+  const handleExtractEntities = useCallback(async () => {
+    if (!hfConfigured || candidates.length === 0) return;
+    setHfAction("ner");
+    setHfError(null);
+    try {
+      const texts = candidates
+        .map((c) => c.eeaSignals)
+        .filter((s) => s.length > 10)
+        .slice(0, 20);
+      const entities = await extractEntities(texts, supabase);
+      setHfEntities(entities);
+    } catch (err: unknown) {
+      setHfError(err instanceof Error ? err.message : "NER extraction failed");
+    } finally {
+      setHfAction(null);
+    }
+  }, [candidates, hfConfigured]);
+
+  // ---------------------------------------------------------------------------
   // Filtered & Sorted Candidates
   // ---------------------------------------------------------------------------
 
@@ -538,6 +618,122 @@ export default function FounderFinderTab({ workspace }: Props) {
           <span>
             Enrichment unavailable — showing Exa results only. Outreach hooks and deep signals require a configured Parallel API key.
           </span>
+        </div>
+      )}
+
+      {/* HF Enhancement Toolbar */}
+      {hasResults && step === "complete" && hfConfigured && (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <Sparkles className="w-3.5 h-3.5" />
+            Hugging Face Enhancements
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void handleFindDuplicates()}
+              disabled={hfAction !== null}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+            >
+              {hfAction === "dedup" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+              {hfAction === "dedup" ? "Finding dupes..." : `Smart Dedup (${candidates.length})`}
+            </button>
+            <button
+              onClick={() => void handleClassifySignals()}
+              disabled={hfAction !== null}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+            >
+              {hfAction === "classify" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+              {hfAction === "classify" ? "Classifying..." : "Classify Signals"}
+            </button>
+            <button
+              onClick={() => void handleExtractEntities()}
+              disabled={hfAction !== null}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+            >
+              {hfAction === "ner" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Tags className="h-3.5 w-3.5" />}
+              {hfAction === "ner" ? "Extracting..." : "Extract Entities"}
+            </button>
+          </div>
+
+          {hfError && (
+            <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {hfError}
+            </div>
+          )}
+
+          {/* Dedup results */}
+          {duplicateGroups.length > 0 && (
+            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+              <p className="text-xs font-medium text-amber-400 mb-1">
+                {duplicateGroups.length} duplicate group{duplicateGroups.length > 1 ? "s" : ""} found
+              </p>
+              {duplicateGroups.map((group, i) => {
+                const names = group.ids.map((id) => {
+                  const c = candidates.find((c) => (c.profileUrl || "") === id);
+                  return c?.name || id;
+                });
+                return (
+                  <p key={i} className="text-xs text-amber-300/80">
+                    {names.join(" ~ ")} (similarity: {group.similarity})
+                  </p>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Classification results */}
+          {hfClassifications.length > 0 && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+              <p className="text-xs font-medium text-primary mb-1">
+                {hfClassifications.length} signal{hfClassifications.length > 1 ? "s" : ""} classified
+              </p>
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {hfClassifications.slice(0, 20).map((c, i) => (
+                  <p key={i} className="text-xs text-muted-foreground">
+                    <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary mr-1">
+                      {c.label}
+                    </span>
+                    <span className="text-foreground/80">{c.signal.slice(0, 80)}</span>
+                    <span className="text-muted-foreground ml-1">({c.score})</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* NER results */}
+          {hfEntities.length > 0 && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+              <p className="text-xs font-medium text-primary mb-1">
+                Entities extracted from {hfEntities.length} signal{hfEntities.length > 1 ? "s" : ""}
+              </p>
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {hfEntities.filter((e) => e.organizations.length > 0 || e.persons.length > 0).slice(0, 15).map((e, i) => (
+                  <div key={i} className="text-xs text-muted-foreground">
+                    {e.organizations.length > 0 && (
+                      <span>
+                        <span className="text-[10px] text-emerald-400 mr-1">ORG:</span>
+                        {e.organizations.join(", ")}
+                      </span>
+                    )}
+                    {e.persons.length > 0 && (
+                      <span className="ml-2">
+                        <span className="text-[10px] text-blue-400 mr-1">PER:</span>
+                        {e.persons.join(", ")}
+                      </span>
+                    )}
+                    {e.locations.length > 0 && (
+                      <span className="ml-2">
+                        <span className="text-[10px] text-yellow-400 mr-1">LOC:</span>
+                        {e.locations.join(", ")}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
