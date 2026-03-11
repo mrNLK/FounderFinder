@@ -47,7 +47,6 @@ import {
   downloadCsv,
 } from "@/lib/founder-finder";
 import { normalizeComparableUrl } from "@/lib/url-utils";
-import { supabase } from "@/integrations/supabase/client";
 import type { DuplicateGroup, SignalClassification, ExtractedEntities } from "@/lib/huggingface";
 import { findDuplicateCandidates, classifySignals, extractEntities } from "@/lib/huggingface";
 
@@ -460,7 +459,7 @@ export default function FounderFinderTab({ workspace }: Props) {
         title: c.title,
         location: c.location,
       }));
-      const groups = await findDuplicateCandidates(dedupInput, supabase);
+      const groups = await findDuplicateCandidates(dedupInput);
       setDuplicateGroups(groups);
     } catch (err: unknown) {
       setHfError(err instanceof Error ? err.message : "Dedup failed");
@@ -478,7 +477,7 @@ export default function FounderFinderTab({ workspace }: Props) {
         .flatMap((c) => c.eeaSignals.split(" | ").map((s) => s.trim()))
         .filter((s) => s.length > 10)
         .slice(0, 50);
-      const classifications = await classifySignals(signals, supabase);
+      const classifications = await classifySignals(signals);
       setHfClassifications(classifications);
     } catch (err: unknown) {
       setHfError(err instanceof Error ? err.message : "Classification failed");
@@ -496,7 +495,7 @@ export default function FounderFinderTab({ workspace }: Props) {
         .map((c) => c.eeaSignals)
         .filter((s) => s.length > 10)
         .slice(0, 20);
-      const entities = await extractEntities(texts, supabase);
+      const entities = await extractEntities(texts);
       setHfEntities(entities);
     } catch (err: unknown) {
       setHfError(err instanceof Error ? err.message : "NER extraction failed");
