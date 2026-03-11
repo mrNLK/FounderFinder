@@ -7,17 +7,30 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
+  type AiFundBuildArtifact,
+  type AiFundBuildProject,
+  type AiFundBuildStageRun,
   type AiFundConcept,
   type AiFundPerson,
   type AiFundAssignment,
   type AiFundEvaluationScore,
   type AiFundDashboardStats,
   type AiFundWorkspace,
+  type BuildArtifactType,
+  type BuildProjectStatus,
+  type BuildStage,
   personFromRow,
 } from "@/types/ai-fund";
 import {
+  advanceBuildStage as advanceBuildStageDb,
+  createBuildProject as createBuildProjectDb,
   fetchConcepts,
+  fetchBuildArtifacts as fetchBuildArtifactsDb,
+  fetchBuildProjects as fetchBuildProjectsDb,
+  fetchBuildStageRuns as fetchBuildStageRunsDb,
   createConcept,
+  saveBuildArtifact as saveBuildArtifactDb,
+  updateBuildProject as updateBuildProjectDb,
   updateConcept as updateConceptDb,
   fetchPeople,
   createPerson,
@@ -37,6 +50,9 @@ import { enrichPersonWithHarmonic } from "@/lib/harmonic";
 
 export function useAiFundWorkspace(): AiFundWorkspace {
   const [concepts, setConcepts] = useState<AiFundConcept[]>([]);
+  const [buildProjects, setBuildProjects] = useState<AiFundBuildProject[]>([]);
+  const [buildStageRuns, setBuildStageRuns] = useState<AiFundBuildStageRun[]>([]);
+  const [buildArtifacts, setBuildArtifacts] = useState<AiFundBuildArtifact[]>([]);
   const [people, setPeople] = useState<AiFundPerson[]>([]);
   const [assignments, setAssignments] = useState<AiFundAssignment[]>([]);
   const [stats, setStats] = useState<AiFundDashboardStats>({
@@ -57,9 +73,12 @@ export function useAiFundWorkspace(): AiFundWorkspace {
     setLoading(true);
     setError(null);
 
-    const [conceptsResult, peopleResult, assignmentsResult, statsResult, settingsResult] =
+    const [conceptsResult, buildProjectsResult, buildStageRunsResult, buildArtifactsResult, peopleResult, assignmentsResult, statsResult, settingsResult] =
       await Promise.allSettled([
         fetchConcepts(),
+        fetchBuildProjectsDb(),
+        fetchBuildStageRunsDb(),
+        fetchBuildArtifactsDb(),
         fetchPeople(),
         fetchAssignments(),
         fetchDashboardStats(),
@@ -80,6 +99,27 @@ export function useAiFundWorkspace(): AiFundWorkspace {
     } else {
       failures.push("people");
       console.error("Failed to load people:", peopleResult.reason);
+    }
+
+    if (buildProjectsResult.status === "fulfilled") {
+      setBuildProjects(buildProjectsResult.value);
+    } else {
+      failures.push("build projects");
+      console.error("Failed to load build projects:", buildProjectsResult.reason);
+    }
+
+    if (buildStageRunsResult.status === "fulfilled") {
+      setBuildStageRuns(buildStageRunsResult.value);
+    } else {
+      failures.push("build stages");
+      console.error("Failed to load build stage runs:", buildStageRunsResult.reason);
+    }
+
+    if (buildArtifactsResult.status === "fulfilled") {
+      setBuildArtifacts(buildArtifactsResult.value);
+    } else {
+      failures.push("build artifacts");
+      console.error("Failed to load build artifacts:", buildArtifactsResult.reason);
     }
 
     if (assignmentsResult.status === "fulfilled") {
@@ -122,6 +162,46 @@ export function useAiFundWorkspace(): AiFundWorkspace {
       return prev.map((person) => (
         person.id === row.id ? row : person
       ));
+    });
+  }, []);
+
+  const mergeBuildProject = useCallback((project: AiFundBuildProject): void => {
+    setBuildProjects((prev) => {
+      const exists = prev.some((candidate) => candidate.id === project.id);
+      if (!exists) {
+        return [project, ...prev];
+      }
+
+      return prev.map((candidate) => (
+        candidate.id === project.id ? project : candidate
+      ));
+    });
+  }, []);
+
+  const mergeBuildStageRuns = useCallback((runs: AiFundBuildStageRun[]): void => {
+    setBuildStageRuns((prev) => {
+      const next = prev.filter((candidate) => !runs.some((run) => run.id === candidate.id));
+      return [...runs, ...next];
+    });
+  }, []);
+
+  const mergeBuildArtifact = useCallback((artifact: AiFundBuildArtifact): void => {
+    setBuildArtifacts((prev) => {
+      const exists = prev.some((candidate) => candidate.id === artifact.id);
+      if (!exists) {
+        return [artifact, ...prev];
+      }
+
+      return prev.map((candidate) => (
+        candidate.id === artifact.id ? artifact : candidate
+      ));
+    });
+  }, []);
+
+  const mergeBuildArtifacts = useCallback((artifacts: AiFundBuildArtifact[]): void => {
+    setBuildArtifacts((prev) => {
+      const next = prev.filter((candidate) => !artifacts.some((artifact) => artifact.id === candidate.id));
+      return [...artifacts, ...next];
     });
   }, []);
 
@@ -194,6 +274,75 @@ export function useAiFundWorkspace(): AiFundWorkspace {
       );
     },
     []
+  );
+
+  const fetchBuildProjectsHandler = useCallback(async (): Promise<void> => {
+    const [projects, runs, artifacts] = await Promise.all([
+      fetchBuildProjectsDb(),
+      fetchBuildStageRunsDb(),
+      fetchBuildArtifactsDb(),
+    ]);
+
+    setBuildProjects(projects);
+    setBuildStageRuns(runs);
+    setBuildArtifacts(artifacts);
+  }, []);
+
+  const createBuildProjectHandler = useCallback(
+    async (fields: Partial<AiFundBuildProject>): Promise<AiFundBuildProject> => {
+      const response = await createBuildProjectDb(fields);
+      mergeBuildProject(response.project);
+      mergeBuildStageRuns(response.stageRuns);
+      mergeBuildArtifacts(response.artifacts);
+      return response.project;
+    },
+    [mergeBuildArtifacts, mergeBuildProject, mergeBuildStageRuns],
+  );
+
+  const updateBuildProjectHandler = useCallback(
+    async (id: string, updates: Partial<AiFundBuildProject>): Promise<AiFundBuildProject> => {
+      const project = await updateBuildProjectDb(id, updates);
+      mergeBuildProject(project);
+      return project;
+    },
+    [mergeBuildProject],
+  );
+
+  const saveBuildArtifactHandler = useCallback(
+    async (
+      projectId: string,
+      artifactType: BuildArtifactType,
+      markdownBody: string,
+    ): Promise<AiFundBuildArtifact> => {
+      const artifact = await saveBuildArtifactDb({
+        projectId,
+        artifactType,
+        markdownBody,
+      });
+      mergeBuildArtifact(artifact);
+      return artifact;
+    },
+    [mergeBuildArtifact],
+  );
+
+  const advanceBuildStageHandler = useCallback(
+    async (input: {
+      projectId: string;
+      stage: BuildStage;
+      action?: "save" | "advance";
+      checklistState?: Record<string, boolean>;
+      summary?: string | null;
+      projectStatus?: BuildProjectStatus;
+    }): Promise<{
+      project: AiFundBuildProject;
+      stageRuns: AiFundBuildStageRun[];
+    }> => {
+      const response = await advanceBuildStageDb(input);
+      mergeBuildProject(response.project);
+      mergeBuildStageRuns(response.stageRuns);
+      return response;
+    },
+    [mergeBuildProject, mergeBuildStageRuns],
   );
 
   const addPerson = useCallback(
@@ -294,6 +443,9 @@ export function useAiFundWorkspace(): AiFundWorkspace {
 
   return {
     concepts,
+    buildProjects,
+    buildStageRuns,
+    buildArtifacts,
     people,
     assignments,
     stats,
@@ -304,6 +456,11 @@ export function useAiFundWorkspace(): AiFundWorkspace {
     refresh,
     addConcept,
     updateConcept: updateConceptHandler,
+    fetchBuildProjects: fetchBuildProjectsHandler,
+    createBuildProject: createBuildProjectHandler,
+    updateBuildProject: updateBuildProjectHandler,
+    saveBuildArtifact: saveBuildArtifactHandler,
+    advanceBuildStage: advanceBuildStageHandler,
     addPerson,
     updatePerson: updatePersonHandler,
     updateSettings: updateSettingsHandler,

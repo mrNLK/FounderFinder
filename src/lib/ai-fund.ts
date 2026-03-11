@@ -7,6 +7,12 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import {
+  type AiFundBuildArtifact,
+  type AiFundBuildArtifactRow,
+  type AiFundBuildProject,
+  type AiFundBuildProjectRow,
+  type AiFundBuildStageRun,
+  type AiFundBuildStageRunRow,
   type AiFundConcept,
   type AiFundPerson,
   type AiFundEvaluationScore,
@@ -19,8 +25,14 @@ import {
   type AiFundHarmonicIntelligenceSummary,
   type AiFundEvidence,
   type AiFundDashboardStats,
+  type BuildArtifactType,
+  type BuildProjectStatus,
+  type BuildStage,
   type PersonWithScores,
   type ConceptWithAssignments,
+  buildArtifactFromRow,
+  buildProjectFromRow,
+  buildStageRunFromRow,
   conceptFromRow,
   personFromRow,
   scoreFromRow,
@@ -49,6 +61,48 @@ async function requireCurrentUser(): Promise<{ userId: string; email: string | n
     userId: user.id,
     email: user.email ?? null,
   };
+}
+
+interface FunctionErrorPayload {
+  error?: {
+    message?: string;
+    code?: string;
+  };
+}
+
+interface BuildProjectUpsertResponse {
+  project: AiFundBuildProjectRow;
+  stageRuns?: AiFundBuildStageRunRow[];
+  artifacts?: AiFundBuildArtifactRow[];
+}
+
+interface BuildArtifactSaveResponse {
+  artifact: AiFundBuildArtifactRow;
+}
+
+interface BuildStageTransitionResponse {
+  project: AiFundBuildProjectRow;
+  stageRuns: AiFundBuildStageRunRow[];
+}
+
+async function extractFunctionErrorMessage(error: unknown): Promise<string> {
+  const defaultMessage = error instanceof Error ? error.message : "Unknown function error";
+  const response = (error as { context?: Response } | null)?.context;
+
+  if (!response) {
+    return defaultMessage;
+  }
+
+  try {
+    const payload = await response.json() as FunctionErrorPayload;
+    return payload.error?.message || defaultMessage;
+  } catch {
+    try {
+      return await response.text();
+    } catch {
+      return defaultMessage;
+    }
+  }
 }
 
 function mapConceptStageForDb(stage: AiFundConcept["stage"] | undefined): string {
@@ -138,6 +192,127 @@ export async function deleteConcept(id: string): Promise<void> {
     .delete()
     .eq("id", id);
   if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// Build OS
+// ---------------------------------------------------------------------------
+
+export async function fetchBuildProjects(): Promise<AiFundBuildProject[]> {
+  const { data, error } = await supabase
+    .from("aifund_build_projects")
+    .select("*")
+    .order("updated_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map((row: AiFundBuildProjectRow) => buildProjectFromRow(row));
+}
+
+export async function fetchBuildStageRuns(): Promise<AiFundBuildStageRun[]> {
+  const { data, error } = await supabase
+    .from("aifund_build_stage_runs")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return (data || []).map((row: AiFundBuildStageRunRow) => buildStageRunFromRow(row));
+}
+
+export async function fetchBuildArtifacts(): Promise<AiFundBuildArtifact[]> {
+  const { data, error } = await supabase
+    .from("aifund_build_artifacts")
+    .select("*")
+    .order("updated_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map((row: AiFundBuildArtifactRow) => buildArtifactFromRow(row));
+}
+
+export async function createBuildProject(
+  fields: Partial<AiFundBuildProject>,
+): Promise<{
+  project: AiFundBuildProject;
+  stageRuns: AiFundBuildStageRun[];
+  artifacts: AiFundBuildArtifact[];
+}> {
+  const { data, error } = await supabase.functions.invoke("aifund-build-project-upsert", {
+    body: {
+      action: "create",
+      project: fields,
+    },
+  });
+
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error));
+  }
+
+  const payload = (data || {}) as BuildProjectUpsertResponse;
+  return {
+    project: buildProjectFromRow(payload.project),
+    stageRuns: (payload.stageRuns || []).map((row: AiFundBuildStageRunRow) => buildStageRunFromRow(row)),
+    artifacts: (payload.artifacts || []).map((row: AiFundBuildArtifactRow) => buildArtifactFromRow(row)),
+  };
+}
+
+export async function updateBuildProject(
+  id: string,
+  updates: Partial<AiFundBuildProject>,
+): Promise<AiFundBuildProject> {
+  const { data, error } = await supabase.functions.invoke("aifund-build-project-upsert", {
+    body: {
+      action: "update",
+      projectId: id,
+      project: updates,
+    },
+  });
+
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error));
+  }
+
+  return buildProjectFromRow((data as BuildProjectUpsertResponse).project);
+}
+
+export async function saveBuildArtifact(input: {
+  projectId: string;
+  artifactType: BuildArtifactType;
+  markdownBody: string;
+}): Promise<AiFundBuildArtifact> {
+  const { data, error } = await supabase.functions.invoke("aifund-build-artifact-save", {
+    body: input,
+  });
+
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error));
+  }
+
+  return buildArtifactFromRow((data as BuildArtifactSaveResponse).artifact);
+}
+
+export async function advanceBuildStage(input: {
+  projectId: string;
+  stage: BuildStage;
+  action?: "save" | "advance";
+  checklistState?: Record<string, boolean>;
+  summary?: string | null;
+  projectStatus?: BuildProjectStatus;
+}): Promise<{
+  project: AiFundBuildProject;
+  stageRuns: AiFundBuildStageRun[];
+}> {
+  const { data, error } = await supabase.functions.invoke("aifund-build-stage-transition", {
+    body: input,
+  });
+
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error));
+  }
+
+  const payload = data as BuildStageTransitionResponse;
+  return {
+    project: buildProjectFromRow(payload.project),
+    stageRuns: payload.stageRuns.map((row: AiFundBuildStageRunRow) => buildStageRunFromRow(row)),
+  };
 }
 
 // ---------------------------------------------------------------------------

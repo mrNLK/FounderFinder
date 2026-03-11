@@ -10,6 +10,7 @@ import { useAiFundWorkspace } from "@/hooks/useAiFundWorkspace";
 import {
   BarChart3,
   Briefcase,
+  FolderKanban,
   Users,
   Link2,
   Mail,
@@ -31,6 +32,7 @@ import InvestmentReviewTab from "@/components/ai-fund/InvestmentReviewTab";
 import IntelligenceTab from "@/components/ai-fund/IntelligenceTab";
 import AiFundSettingsTab from "@/components/ai-fund/SettingsTab";
 import FounderFinderTab from "@/components/ai-fund/FounderFinderTab";
+import BuildOsTab from "@/components/ai-fund/BuildOsTab";
 
 type AiFundTab =
   | "overview"
@@ -41,6 +43,7 @@ type AiFundTab =
   | "residencies"
   | "investment"
   | "intelligence"
+  | "build_os"
   | "founderfinder"
   | "settings";
 
@@ -53,6 +56,7 @@ const TABS: { id: AiFundTab; label: string; icon: React.ElementType }[] = [
   { id: "residencies", label: "Residencies", icon: Home },
   { id: "investment", label: "Investment", icon: FileCheck },
   { id: "intelligence", label: "Intelligence", icon: Zap },
+  { id: "build_os", label: "Build OS", icon: FolderKanban },
   { id: "founderfinder", label: "Founder Finder", icon: Search },
   { id: "settings", label: "Settings", icon: Settings },
 ];
@@ -79,6 +83,8 @@ export default function AIFundDashboard() {
         return <InvestmentReviewTab workspace={workspace} />;
       case "intelligence":
         return <IntelligenceTab workspace={workspace} />;
+      case "build_os":
+        return <BuildOsTab workspace={workspace} />;
       case "founderfinder":
         return <FounderFinderTab workspace={workspace} />;
       case "settings":
