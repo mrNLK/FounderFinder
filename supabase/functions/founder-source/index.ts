@@ -28,7 +28,7 @@ interface SearchCriteria {
 interface SearchQuery {
   query: string;
   count: number;
-  searchCriteria: SearchCriteria[];
+      enrichments: Record<string, unknown> | unknown[];
 }
 
 interface EnrichmentColumn {
@@ -286,7 +286,7 @@ async function retrieveAllItems(websetId: string, apiKey: string): Promise<Webse
         id,
         url: asString(record.url) || "",
         properties: asRecord(record.properties),
-        enrichments: asRecord(record.enrichments),
+                  enrichments: record.enrichments && typeof record.enrichments === "object" ? record.enrichments as Record<string, unknown> | unknown[] : {},
       });
     }
 
@@ -302,9 +302,20 @@ async function retrieveAllItems(websetId: string, apiKey: string): Promise<Webse
 // Map Items to Candidate Shape
 // ---------------------------------------------------------------------------
 
-function extractEnrichmentValue(enrichments: Record<string, unknown>, description: string): string {
+function extractEnrichmentValue(enrichments: Record<string, unknown> | unknown[], description: string): string {
   // Enrichments may be keyed by description or by index
   for (const [_key, val] of Object.entries(enrichments)) {
+    // Handle array-form enrichments first
+      if (Array.isArray(enrichments)) {
+          for (const item of enrichments) {
+                const record = asRecord(item);
+                      if (asString(record.description)?.includes(description.substring(0, 20))) {
+                              return asString(record.value) || asString(record.result) || "";
+                                    }
+                                        }
+                                            return "";
+                                              }
+                                              
     const record = asRecord(val);
     if (asString(record.description) === description || asString(record.field) === description) {
       return asString(record.value) || asString(record.result) || "";
