@@ -19,6 +19,28 @@ export type ConceptStage =
   | "funded"
   | "archived";
 
+export type BuildStage =
+  | "explore"
+  | "prd_research"
+  | "tdd_review"
+  | "build_loop"
+  | "manual_polish";
+
+export type BuildProjectStatus = "active" | "shipped" | "parked";
+
+export type BuildStageRunStatus = "locked" | "active" | "completed";
+
+export type BuildArtifactType =
+  | "experiment_log"
+  | "prd"
+  | "market_signals"
+  | "tdd"
+  | "engineering_questions"
+  | "implementation_notes"
+  | "qa_notes"
+  | "manual_test_notes"
+  | "polish_backlog";
+
 export type ProcessStage =
   | "identified"
   | "researched"
@@ -102,6 +124,49 @@ export interface AiFundConcept {
   lpSource: string | null;
   notes: string | null;
   metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiFundBuildProject {
+  id: string;
+  userId: string;
+  conceptId: string | null;
+  title: string;
+  problemStatement: string | null;
+  targetUser: string | null;
+  repoUrl: string | null;
+  deployUrl: string | null;
+  currentStage: BuildStage;
+  status: BuildProjectStatus;
+  templateVersion: number;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiFundBuildStageRun {
+  id: string;
+  projectId: string;
+  userId: string;
+  stage: BuildStage;
+  status: BuildStageRunStatus;
+  checklistState: Record<string, boolean>;
+  summary: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiFundBuildArtifact {
+  id: string;
+  projectId: string;
+  userId: string;
+  artifactType: BuildArtifactType;
+  title: string;
+  markdownBody: string;
+  sourceStage: BuildStage;
   createdAt: string;
   updatedAt: string;
 }
@@ -618,6 +683,9 @@ export interface AiFundDashboardStats {
 
 export interface AiFundWorkspace {
   concepts: AiFundConcept[];
+  buildProjects: AiFundBuildProject[];
+  buildStageRuns: AiFundBuildStageRun[];
+  buildArtifacts: AiFundBuildArtifact[];
   people: AiFundPerson[];
   assignments: AiFundAssignment[];
   stats: AiFundDashboardStats;
@@ -628,6 +696,25 @@ export interface AiFundWorkspace {
   refresh: () => Promise<void>;
   addConcept: (concept: Partial<AiFundConcept>) => Promise<AiFundConcept | null>;
   updateConcept: (id: string, updates: Partial<AiFundConcept>) => Promise<void>;
+  fetchBuildProjects: () => Promise<void>;
+  createBuildProject: (project: Partial<AiFundBuildProject>) => Promise<AiFundBuildProject>;
+  updateBuildProject: (id: string, updates: Partial<AiFundBuildProject>) => Promise<AiFundBuildProject>;
+  saveBuildArtifact: (
+    projectId: string,
+    artifactType: BuildArtifactType,
+    markdownBody: string,
+  ) => Promise<AiFundBuildArtifact>;
+  advanceBuildStage: (input: {
+    projectId: string;
+    stage: BuildStage;
+    action?: "save" | "advance";
+    checklistState?: Record<string, boolean>;
+    summary?: string | null;
+    projectStatus?: BuildProjectStatus;
+  }) => Promise<{
+    project: AiFundBuildProject;
+    stageRuns: AiFundBuildStageRun[];
+  }>;
   addPerson: (person: Partial<AiFundPerson>) => Promise<AiFundPerson | null>;
   updatePerson: (id: string, updates: Partial<AiFundPerson>) => Promise<void>;
   updateSettings: (updates: AiFundSettingsUpdate) => Promise<void>;
@@ -656,6 +743,49 @@ export interface AiFundConceptRow {
   problem_statement?: string | null;
   market_theme?: string | null;
   first_customer_notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiFundBuildProjectRow {
+  id: string;
+  user_id: string;
+  concept_id: string | null;
+  title: string;
+  problem_statement: string | null;
+  target_user: string | null;
+  repo_url: string | null;
+  deploy_url: string | null;
+  current_stage: BuildStage;
+  status: BuildProjectStatus;
+  template_version: number;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiFundBuildStageRunRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  stage: BuildStage;
+  status: BuildStageRunStatus;
+  checklist_state: Record<string, unknown> | null;
+  summary: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiFundBuildArtifactRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  artifact_type: BuildArtifactType;
+  title: string;
+  markdown_body: string;
+  source_stage: BuildStage;
   created_at: string;
   updated_at: string;
 }
@@ -862,6 +992,61 @@ export function conceptFromRow(row: AiFundConceptRow): AiFundConcept {
     lpSource: row.lp_source ?? row.lp_sponsor ?? row.source ?? null,
     notes: row.notes ?? row.first_customer_notes ?? null,
     metadata: row.metadata ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function buildProjectFromRow(row: AiFundBuildProjectRow): AiFundBuildProject {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    conceptId: row.concept_id,
+    title: row.title,
+    problemStatement: row.problem_statement,
+    targetUser: row.target_user,
+    repoUrl: row.repo_url,
+    deployUrl: row.deploy_url,
+    currentStage: row.current_stage,
+    status: row.status,
+    templateVersion: row.template_version,
+    metadata: row.metadata,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function buildStageRunFromRow(row: AiFundBuildStageRunRow): AiFundBuildStageRun {
+  const rawChecklist = row.checklist_state ?? {};
+  const checklistState = Object.entries(rawChecklist).reduce((accumulator: Record<string, boolean>, [key, value]) => {
+    accumulator[key] = value === true;
+    return accumulator;
+  }, {});
+
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    userId: row.user_id,
+    stage: row.stage,
+    status: row.status,
+    checklistState,
+    summary: row.summary,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function buildArtifactFromRow(row: AiFundBuildArtifactRow): AiFundBuildArtifact {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    userId: row.user_id,
+    artifactType: row.artifact_type,
+    title: row.title,
+    markdownBody: row.markdown_body,
+    sourceStage: row.source_stage,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
