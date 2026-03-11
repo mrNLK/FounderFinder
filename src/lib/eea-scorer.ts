@@ -1,351 +1,500 @@
 /**
- * EEA Scoring Engine
+ * EEA (Evidence of Exceptional Ability) Scoring Engine
  *
- * Scores candidates based on verifiable Evidence of Exceptional Ability signals.
- * Designed for AI Fund's Founder in Residence and Visiting Engineer pipelines.
- *
- * Scoring logic:
- * - Tier 1: any match = 85 + (5 per additional Tier 1 match, max 100)
- * - Tier 2: each match = +8 points starting from 40
- * - False positives: each = -10 points
- * - Bay Area confirmed: +5 bonus
- * - Founder / 0-to-1 signals: +5 bonus
- * - B2B + application layer signals: +5 bonus
- * - Cap at 100, floor at 0
+ * Scores founder candidates based on verifiable signals of exceptional
+ * technical ability relevant to AI/ML. Completely separate from the
+ * weighted composite scorer in aifund-scoring.ts.
  */
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type EEAScore = {
-  tier: 1 | 2 | 3 | null;
-  score: number;
-  matchedTier1: string[];
-  matchedTier2: string[];
-  falsePositiveFlags: string[];
-  summary: string;
-};
+import type { EEAScore } from "@/types/founder-finder";
+export type { EEAScore } from "@/types/founder-finder";
 
 // ---------------------------------------------------------------------------
-// Signal Definitions
+// Tier 1 Signals — any single one = score 85+, tier 1, immediate outreach
 // ---------------------------------------------------------------------------
 
-interface SignalPattern {
+interface Tier1Signal {
   label: string;
-  patterns: string[][];  // each inner array = AND condition (all must match), outer = OR alternatives
+  matchers: ((joined: string) => boolean)[];
 }
 
-const TIER_1_SIGNALS: SignalPattern[] = [
-  { label: "IOI medalist", patterns: [["ioi"], ["international olympiad in informatics"]] },
-  { label: "IMO medalist", patterns: [["imo"], ["international mathematical olympiad"]] },
-  { label: "ICPC World Finals", patterns: [["icpc world finals"], ["acm icpc world"], ["icpc world champion"]] },
-  { label: "Kaggle Grandmaster", patterns: [["kaggle competition grandmaster"], ["kaggle grandmaster"]] },
-  { label: "NeurIPS oral/best paper", patterns: [["neurips", "oral"], ["neurips", "best paper"], ["neurips", "outstanding paper"]] },
-  { label: "ICML oral/best paper", patterns: [["icml", "oral"], ["icml", "best paper"]] },
-  { label: "ICLR oral/best paper", patterns: [["iclr", "oral"], ["iclr", "best paper"]] },
-  { label: "Hertz Fellow", patterns: [["hertz fellow"]] },
-  { label: "Knight-Hennessy Scholar", patterns: [["knight-hennessy scholar"], ["knight hennessy"]] },
-  { label: "Gates Cambridge Scholar", patterns: [["gates cambridge scholar"], ["gates cambridge"]] },
-  { label: "Thiel Fellow", patterns: [["thiel fellow"]] },
-  { label: "Google PhD Fellow", patterns: [["google phd fellow"]] },
-  { label: "Microsoft Research PhD Fellow", patterns: [["microsoft research phd fellow"]] },
-  { label: "Apple Scholar in AI", patterns: [["apple scholar in ai"], ["apple scholar"]] },
-  { label: "OpenAI Resident", patterns: [["openai resident"]] },
-  { label: "Google Brain Resident", patterns: [["google brain resident"], ["google ai resident"]] },
-  { label: "DeepMind Resident", patterns: [["deepmind resident"]] },
-  { label: "Y Combinator", patterns: [["y combinator"], ["yc w"], ["yc s"], ["yc f"]] },
-  { label: "a16z Speedrun", patterns: [["a16z speedrun"]] },
-  { label: "OpenAI Converge", patterns: [["openai converge"]] },
-  { label: "MIT TR35", patterns: [["mit technology review innovators under 35"], ["mit tr35"]] },
-  { label: "ACM Doctoral Dissertation Award", patterns: [["acm doctoral dissertation award"]] },
-  { label: "Prior exit >$50M", patterns: [["prior exit"], ["acquired for"], ["acquisition"]] },
-  { label: "Major open source (10K+ stars)", patterns: [["10,000 stars"], ["10k stars"], ["core maintainer"]] },
+const TIER_1_SIGNALS: Tier1Signal[] = [
+  {
+    label: "International Olympiad in Informatics",
+    matchers: [
+      (s) => s.includes("ioi") && !s.includes("ioi silver") && !s.includes("ioi bronze"),
+      (s) => s.includes("international olympiad in informatics"),
+    ],
+  },
+  {
+    label: "International Mathematical Olympiad",
+    matchers: [
+      (s) => /\bimo\b/.test(s),
+      (s) => s.includes("international mathematical olympiad"),
+    ],
+  },
+  {
+    label: "ICPC World Finals",
+    matchers: [
+      (s) => s.includes("icpc world finals"),
+      (s) => s.includes("acm icpc world"),
+      (s) => s.includes("icpc world champion"),
+    ],
+  },
+  {
+    label: "Kaggle Grandmaster",
+    matchers: [
+      (s) => s.includes("kaggle competition grandmaster"),
+      (s) => s.includes("kaggle grandmaster"),
+    ],
+  },
+  {
+    label: "NeurIPS Oral/Best Paper",
+    matchers: [
+      (s) => s.includes("neurips") && (s.includes("oral") || s.includes("best paper") || s.includes("outstanding paper")),
+    ],
+  },
+  {
+    label: "ICML Oral/Best Paper",
+    matchers: [
+      (s) => s.includes("icml") && (s.includes("oral") || s.includes("best paper")),
+    ],
+  },
+  {
+    label: "ICLR Oral/Best Paper",
+    matchers: [
+      (s) => s.includes("iclr") && (s.includes("oral") || s.includes("best paper")),
+    ],
+  },
+  {
+    label: "Prestigious Fellowship",
+    matchers: [
+      (s) => s.includes("hertz fellow"),
+      (s) => s.includes("knight-hennessy scholar"),
+      (s) => s.includes("gates cambridge scholar"),
+    ],
+  },
+  {
+    label: "Thiel Fellow",
+    matchers: [(s) => s.includes("thiel fellow")],
+  },
+  {
+    label: "Top PhD Fellowship",
+    matchers: [
+      (s) => s.includes("google phd fellow"),
+      (s) => s.includes("microsoft research phd fellow"),
+      (s) => s.includes("apple scholar in ai"),
+    ],
+  },
+  {
+    label: "AI Lab Resident",
+    matchers: [
+      (s) => s.includes("openai resident"),
+      (s) => s.includes("google brain resident"),
+      (s) => s.includes("deepmind resident"),
+    ],
+  },
+  {
+    label: "Y Combinator",
+    matchers: [
+      (s) => s.includes("y combinator"),
+      (s) => /\byc [wsf]\d{2}\b/.test(s),
+      (s) => /\byc [wsf]20\d{2}\b/.test(s),
+    ],
+  },
+  {
+    label: "a16z Speedrun",
+    matchers: [(s) => s.includes("a16z speedrun")],
+  },
+  {
+    label: "OpenAI Converge",
+    matchers: [(s) => s.includes("openai converge")],
+  },
+  {
+    label: "MIT TR35",
+    matchers: [
+      (s) => s.includes("mit technology review innovators under 35"),
+      (s) => s.includes("mit tr35"),
+    ],
+  },
+  {
+    label: "ACM Doctoral Dissertation Award",
+    matchers: [(s) => s.includes("acm doctoral dissertation award")],
+  },
+  {
+    label: "Prior Exit (>$50M)",
+    matchers: [
+      (s) => {
+        const hasExit = s.includes("prior exit") || s.includes("acquired for") || s.includes("acquisition");
+        if (!hasExit) return false;
+        // Check for >$50M indicator
+        const amountMatch = s.match(/\$(\d+(?:\.\d+)?)\s*(m|million|b|billion)/i);
+        if (!amountMatch) return false;
+        const value = parseFloat(amountMatch[1]);
+        const unit = amountMatch[2].toLowerCase();
+        const millions = unit.startsWith("b") ? value * 1000 : value;
+        return millions > 50;
+      },
+    ],
+  },
+  {
+    label: "Major Open Source (10k+ stars)",
+    matchers: [
+      (s) => s.includes("10,000 stars") || s.includes("10k stars"),
+      (s) => s.includes("core maintainer"),
+    ],
+  },
+  {
+    label: "Elite AI Lab Engineer",
+    matchers: [
+      (s) => s.includes("ex-openai") || (s.includes("openai") && (s.includes("engineer") || s.includes("researcher"))),
+      (s) => s.includes("ex-anthropic") || (s.includes("anthropic") && (s.includes("engineer") || s.includes("researcher"))),
+      (s) => s.includes("ex-deepmind") || (s.includes("deepmind") && (s.includes("engineer") || s.includes("researcher"))),
+      (s) => s.includes("google brain") && !s.includes("resident"),
+      (s) => s.includes("meta fair") || s.includes("facebook ai research"),
+    ],
+  },
 ];
 
-const TIER_2_SIGNALS: SignalPattern[] = [
-  { label: "NeurIPS paper", patterns: [["neurips"]] },
-  { label: "ICML paper", patterns: [["icml"]] },
-  { label: "ICLR paper", patterns: [["iclr"]] },
-  { label: "CVPR paper", patterns: [["cvpr"]] },
-  { label: "First author", patterns: [["first author"]] },
-  { label: "Spotlight", patterns: [["spotlight"]] },
-  { label: "IOI Silver/Bronze", patterns: [["ioi silver"], ["ioi bronze"], ["apio"]] },
-  { label: "USAMO", patterns: [["usamo"]] },
-  { label: "Putnam", patterns: [["putnam"]] },
-  { label: "Codeforces Grandmaster", patterns: [["codeforces grandmaster"], ["codeforces 2400"]] },
-  { label: "Kaggle Master", patterns: [["kaggle master"], ["kaggle competition master"]] },
-  { label: "ICPC Regional/Finalist", patterns: [["icpc regional"], ["icpc regionals"], ["icpc finalist"]] },
-  { label: "NSF GRFP", patterns: [["nsf grfp"], ["nsf graduate research fellow"]] },
-  { label: "NDSEG Fellow", patterns: [["ndseg fellow"]] },
-  { label: "Rhodes Scholar", patterns: [["rhodes scholar"]] },
-  { label: "Marshall Scholar", patterns: [["marshall scholar"]] },
-  { label: "VC-backed (Series A/B)", patterns: [["series a"], ["series b"], ["vc-backed"]] },
-  { label: "TreeHacks winner", patterns: [["treehacks"]] },
-  { label: "HackMIT winner", patterns: [["hackmit"]] },
-  { label: "CalHacks winner", patterns: [["calhacks"]] },
-  { label: "ETHGlobal winner", patterns: [["ethglobal"]] },
-  { label: "High h-index", patterns: [["h-index"]] },
-  { label: "Highly cited arXiv", patterns: [["arxiv"]] },
-  { label: "MLSys paper", patterns: [["mlsys"]] },
-  { label: "OSDI paper", patterns: [["osdi"]] },
-  { label: "SOSP paper", patterns: [["sosp"]] },
-  { label: "Google Scholar presence", patterns: [["google scholar"]] },
-  { label: "Stanford", patterns: [["stanford"]] },
-  { label: "MIT", patterns: [["mit"]] },
-  { label: "Berkeley", patterns: [["berkeley"]] },
-  { label: "CMU", patterns: [["cmu"]] },
-];
+// ---------------------------------------------------------------------------
+// Tier 2 Signals — combinations of 2+ build the case
+// ---------------------------------------------------------------------------
 
-interface FalsePositivePattern {
+interface Tier2Signal {
   label: string;
+  matchers: ((joined: string) => boolean)[];
+  /** If true, requires another Tier 2 match to count */
+  requiresCombination?: boolean;
+}
+
+const TIER_2_SIGNALS: Tier2Signal[] = [
+  {
+    label: "Top ML Conference",
+    matchers: [
+      (s) => s.includes("neurips"),
+      (s) => s.includes("icml"),
+      (s) => s.includes("iclr"),
+      (s) => s.includes("cvpr"),
+    ],
+  },
+  {
+    label: "First Author",
+    matchers: [(s) => s.includes("first author")],
+  },
+  {
+    label: "Spotlight Paper",
+    matchers: [(s) => s.includes("spotlight")],
+  },
+  {
+    label: "IOI Silver/Bronze or APIO",
+    matchers: [
+      (s) => s.includes("ioi silver"),
+      (s) => s.includes("ioi bronze"),
+      (s) => s.includes("apio"),
+    ],
+  },
+  {
+    label: "USAMO/Putnam",
+    matchers: [
+      (s) => s.includes("usamo"),
+      (s) => s.includes("putnam"),
+    ],
+  },
+  {
+    label: "Codeforces Grandmaster",
+    matchers: [
+      (s) => s.includes("codeforces grandmaster"),
+      (s) => s.includes("codeforces 2400"),
+    ],
+  },
+  {
+    label: "Kaggle Master",
+    matchers: [
+      (s) => s.includes("kaggle master") && !s.includes("kaggle grandmaster"),
+      (s) => s.includes("kaggle competition master"),
+    ],
+  },
+  {
+    label: "ICPC Regional/Finalist",
+    matchers: [
+      (s) => s.includes("icpc regional"),
+      (s) => s.includes("icpc regionals"),
+      (s) => s.includes("icpc finalist"),
+    ],
+  },
+  {
+    label: "NSF GRFP",
+    matchers: [
+      (s) => s.includes("nsf grfp"),
+      (s) => s.includes("nsf graduate research fellow"),
+    ],
+  },
+  {
+    label: "NDSEG Fellow",
+    matchers: [(s) => s.includes("ndseg fellow")],
+  },
+  {
+    label: "Rhodes/Marshall Scholar",
+    matchers: [
+      (s) => s.includes("rhodes scholar"),
+      (s) => s.includes("marshall scholar"),
+    ],
+  },
+  {
+    label: "VC-backed",
+    matchers: [
+      (s) => s.includes("series a"),
+      (s) => s.includes("series b"),
+      (s) => s.includes("vc-backed"),
+    ],
+  },
+  {
+    label: "Hackathon Winner",
+    matchers: [
+      (s) => (s.includes("treehacks") || s.includes("hackmit") || s.includes("calhacks")) &&
+             (s.includes("winner") || s.includes("grand prize")),
+    ],
+  },
+  {
+    label: "ETHGlobal Winner",
+    matchers: [
+      (s) => s.includes("ethglobal") && (s.includes("winner") || s.includes("finalist") || s.includes("prize")),
+    ],
+  },
+  {
+    label: "High h-index",
+    matchers: [
+      (s) => {
+        const match = s.match(/h-index\s*(?:of\s*)?(\d+)/i);
+        return match ? parseInt(match[1], 10) >= 10 : false;
+      },
+    ],
+  },
+  {
+    label: "Highly Cited arXiv",
+    matchers: [
+      (s) => s.includes("arxiv") && (s.includes("1000 citations") || s.includes("highly cited")),
+    ],
+  },
+  {
+    label: "Systems Conference",
+    matchers: [
+      (s) => s.includes("mlsys"),
+      (s) => s.includes("osdi"),
+      (s) => s.includes("sosp"),
+    ],
+  },
+  {
+    label: "Google Scholar",
+    matchers: [(s) => s.includes("google scholar")],
+  },
+  {
+    label: "Elite University",
+    matchers: [
+      (s) => s.includes("stanford"),
+      (s) => /\bmit\b/.test(s),
+      (s) => s.includes("berkeley"),
+      (s) => /\bcmu\b/.test(s),
+    ],
+    requiresCombination: true,
+  },
+  {
+    label: "Multiple Exits",
+    matchers: [
+      (s) => {
+        const match = s.match(/(\d+)\s*(?:exits?|acquisitions)/i);
+        return match ? parseInt(match[1], 10) >= 2 : false;
+      },
+    ],
+  },
+  {
+    label: "Ex-FAANG Senior+",
+    matchers: [
+      (s) => (s.includes("staff engineer") || s.includes("principal engineer") || s.includes("distinguished engineer")) &&
+             (s.includes("google") || s.includes("meta") || s.includes("apple") || s.includes("amazon")),
+    ],
+    requiresCombination: true,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// False Positive Flags
+// ---------------------------------------------------------------------------
+
+interface FalsePositiveCheck {
+  flag: string;
   check: (joined: string) => boolean;
 }
 
-const FALSE_POSITIVE_CHECKS: FalsePositivePattern[] = [
+const FALSE_POSITIVE_CHECKS: FalsePositiveCheck[] = [
   {
-    label: "Workshop paper listed as main conference — NeurIPS/ICML/ICLR workshop papers have 30-60% acceptance, not ~25%",
-    check: (text) => {
-      const confNames = ["neurips", "icml", "iclr"];
-      for (const conf of confNames) {
-        const confIdx = text.indexOf(conf);
-        if (confIdx === -1) continue;
-        const nearby = text.substring(Math.max(0, confIdx - 30), confIdx + conf.length + 30);
-        if (nearby.includes("workshop")) return true;
+    flag: "Workshop paper (not main conference)",
+    check: (s) => {
+      const conferences = ["neurips", "icml", "iclr"];
+      for (const conf of conferences) {
+        if (!s.includes(conf)) continue;
+        // Check if "workshop" appears within ~5 words of the conference name
+        const idx = s.indexOf(conf);
+        const window = s.substring(Math.max(0, idx - 40), idx + conf.length + 40);
+        if (window.includes("workshop")) return true;
       }
       return false;
     },
   },
   {
-    label: "Findings of ACL/EMNLP — weaker tier than main conference proceedings",
-    check: (text) => text.includes("findings of acl") || text.includes("findings of emnlp"),
+    flag: "Findings track (weaker than main conference)",
+    check: (s) => s.includes("findings of acl") || s.includes("findings of emnlp"),
   },
   {
-    label: "TEDx is not TED main stage — 100x selectivity difference",
-    check: (text) => text.includes("tedx"),
+    flag: "TEDx is not TED main stage — 100x selectivity difference",
+    check: (s) => s.includes("tedx"),
   },
   {
-    label: "IBM patent volume filer — bonuses incentivize quantity over quality",
-    check: (text) => {
-      if (!text.includes("ibm") || !text.includes("patent")) return false;
-      const patentMatches = text.match(/patent/gi);
-      return (patentMatches?.length ?? 0) > 5;
+    flag: "IBM high-volume patent filer",
+    check: (s) => {
+      if (!s.includes("ibm") || !s.includes("patent")) return false;
+      const patentCountMatch = s.match(/(\d+)\s*patents?/i);
+      if (patentCountMatch && parseInt(patentCountMatch[1], 10) > 5) return true;
+      return false;
     },
   },
   {
-    label: "Forbes 30 Under 30 without Enterprise Tech or Science category — PR-driven, not technically credible",
-    check: (text) => {
-      if (!text.includes("forbes 30") && !text.includes("forbes thirty") && !text.includes("30 under 30")) return false;
-      return !text.includes("enterprise tech") && !text.includes("enterprise technology") && !text.includes("science");
+    flag: "Forbes 30 Under 30 (non-technical category)",
+    check: (s) => {
+      if (!s.includes("forbes 30")) return false;
+      return !s.includes("enterprise tech") && !s.includes("enterprise technology") && !s.includes("science");
     },
   },
   {
-    label: "Kaggle Expert/Contributor — not elite tier, top 10% at most",
-    check: (text) => text.includes("kaggle expert") || text.includes("kaggle contributor"),
+    flag: "Kaggle Expert/Contributor (not elite tier)",
+    check: (s) => s.includes("kaggle expert") || s.includes("kaggle contributor"),
   },
   {
-    label: "Hackathon sponsor bounty prize — 'Best Use of [API]' has very low bar",
-    check: (text) => /best use of\s+\w+/i.test(text),
+    flag: "Sponsor bounty hackathon prize (low bar)",
+    check: (s) => /best use of .+?(api|sdk|platform)/i.test(s),
   },
   {
-    label: "Provisional patent / patent pending — never survived examination",
-    check: (text) => text.includes("provisional patent") || text.includes("patent pending"),
+    flag: "Provisional patent (never converted)",
+    check: (s) => s.includes("provisional patent") || s.includes("patent pending"),
   },
 ];
 
 // ---------------------------------------------------------------------------
-// Matching Logic
-// ---------------------------------------------------------------------------
-
-function matchesPattern(joined: string, pattern: string[]): boolean {
-  return pattern.every(term => joined.includes(term));
-}
-
-function findMatchedSignals(joined: string, signals: SignalPattern[]): string[] {
-  const matched: string[] = [];
-  for (const signal of signals) {
-    for (const pattern of signal.patterns) {
-      if (matchesPattern(joined, pattern)) {
-        if (!matched.includes(signal.label)) {
-          matched.push(signal.label);
-        }
-        break;
-      }
-    }
-  }
-  return matched;
-}
-
-// ---------------------------------------------------------------------------
-// Hackathon winner proximity check
-// ---------------------------------------------------------------------------
-
-function checkHackathonWinnerProximity(joined: string, hackathon: string): boolean {
-  const idx = joined.indexOf(hackathon);
-  if (idx === -1) return true; // if found via pattern match, default to counting it
-  const nearby = joined.substring(Math.max(0, idx - 50), idx + hackathon.length + 50);
-  return nearby.includes("winner") || nearby.includes("grand prize") || nearby.includes("first place") || nearby.includes("1st place");
-}
-
-// ---------------------------------------------------------------------------
-// University signal deduplication (only counts if combined with another Tier 2)
-// ---------------------------------------------------------------------------
-
-const UNIVERSITY_LABELS = ["Stanford", "MIT", "Berkeley", "CMU"];
-
-// ---------------------------------------------------------------------------
-// Main Scoring Function
+// Scoring Logic
 // ---------------------------------------------------------------------------
 
 export function scoreCandidate(signals: string[]): EEAScore {
-  const joined = signals.join(" ").toLowerCase();
+  const joined = signals.map((s) => s.toLowerCase()).join(" ||| ");
 
-  // Find Tier 1 matches
-  let matchedTier1 = findMatchedSignals(joined, TIER_1_SIGNALS);
-
-  // Find Tier 2 matches
-  let matchedTier2 = findMatchedSignals(joined, TIER_2_SIGNALS);
-
-  // False positive check: workshop papers should demote Tier 1 conference signals
+  // Detect false positives first (they affect Tier 1 → Tier 2 downgrades)
   const falsePositiveFlags: string[] = [];
   for (const fp of FALSE_POSITIVE_CHECKS) {
     if (fp.check(joined)) {
-      falsePositiveFlags.push(fp.label);
+      falsePositiveFlags.push(fp.flag);
     }
   }
 
-  // If workshop false positive is flagged, demote any conference Tier 1 match
-  if (falsePositiveFlags.some(f => f.includes("Workshop paper"))) {
-    const confTier1Labels = ["NeurIPS oral/best paper", "ICML oral/best paper", "ICLR oral/best paper"];
-    const demoted = matchedTier1.filter(l => confTier1Labels.includes(l));
-    if (demoted.length > 0) {
-      matchedTier1 = matchedTier1.filter(l => !confTier1Labels.includes(l));
-      // Don't re-add to Tier 2 since the conference name is already there
+  const hasWorkshopFP = falsePositiveFlags.some((f) => f.includes("Workshop paper"));
+
+  // Match Tier 1 signals
+  const matchedTier1: string[] = [];
+  for (const signal of TIER_1_SIGNALS) {
+    // If workshop false positive found, downgrade NeurIPS/ICML/ICLR oral/best paper
+    if (hasWorkshopFP && (signal.label.includes("NeurIPS") || signal.label.includes("ICML") || signal.label.includes("ICLR"))) {
+      continue;
+    }
+    const isMatch = signal.matchers.some((m) => m(joined));
+    if (isMatch) {
+      matchedTier1.push(signal.label);
     }
   }
 
-  // Hackathon signals: only count if "winner" or "grand prize" is nearby
-  const hackathonLabels = ["TreeHacks winner", "HackMIT winner", "CalHacks winner"];
-  const hackathonTerms = ["treehacks", "hackmit", "calhacks"];
-  matchedTier2 = matchedTier2.filter((label, idx) => {
-    const hackIdx = hackathonLabels.indexOf(label);
-    if (hackIdx === -1) return true;
-    return checkHackathonWinnerProximity(joined, hackathonTerms[hackIdx]);
-  });
-
-  // ETHGlobal: only count if winner/finalist/prize nearby
-  if (matchedTier2.includes("ETHGlobal winner")) {
-    const ethIdx = joined.indexOf("ethglobal");
-    if (ethIdx !== -1) {
-      const nearby = joined.substring(Math.max(0, ethIdx - 50), ethIdx + 60);
-      if (!nearby.includes("winner") && !nearby.includes("finalist") && !nearby.includes("prize")) {
-        matchedTier2 = matchedTier2.filter(l => l !== "ETHGlobal winner");
-      }
+  // Match Tier 2 signals
+  const matchedTier2: string[] = [];
+  for (const signal of TIER_2_SIGNALS) {
+    const isMatch = signal.matchers.some((m) => m(joined));
+    if (isMatch) {
+      matchedTier2.push(signal.label);
     }
   }
-
-  // University signals: only count if combined with another non-university Tier 2
-  const nonUniTier2 = matchedTier2.filter(l => !UNIVERSITY_LABELS.includes(l));
-  if (nonUniTier2.length === 0) {
-    matchedTier2 = matchedTier2.filter(l => !UNIVERSITY_LABELS.includes(l));
+    // Handle requiresCombination: remove signals that require another
+        // corroborating Tier 2 match if they appear alone
+            const comboSignals = TIER_2_SIGNALS.filter((s) => s.requiresCombination);
+                for (const comboSig of comboSignals) {
+                      if (!matchedTier2.includes(comboSig.label)) continue;
+                            const otherTier2Count = matchedTier2.filter((s) => s !== comboSig.label).length;
+                                  if (otherTier2Count === 0 && matchedTier1.length === 0) {
+                                          const idx = matchedTier2.indexOf(comboSig.label);
+                                                  matchedTier2.splice(idx, 1);
+                                                        }
+                                                            }
+                                                            
+  // If workshop FP detected, move any conference signals that were T1 down to T2
+  if (hasWorkshopFP) {
+    // The conference was already excluded from T1 above.
+    // It still counts as T2 (poster/spotlight level).
   }
 
-  // Prior exit: only count for Tier 1 if >$50M is indicated
-  if (matchedTier1.includes("Prior exit >$50M")) {
-    if (!joined.includes("50m") && !joined.includes("$50") && !joined.includes("50 million") &&
-        !joined.includes("100m") && !joined.includes("$100") && !joined.includes("billion")) {
-      matchedTier1 = matchedTier1.filter(l => l !== "Prior exit >$50M");
-      // Demote to Tier 2 as general exit signal
-      if (!matchedTier2.includes("VC-backed (Series A/B)")) {
-        matchedTier2.push("VC-backed (Series A/B)");
-      }
-    }
-  }
-
-  // Remove Tier 2 duplicates of Tier 1 signals (e.g., NeurIPS oral already matched in Tier 1)
-  // Conference-level Tier 2 matches should not double-count if the specific Tier 1 matched
-  const tier1ConferenceMap: Record<string, string[]> = {
-    "NeurIPS oral/best paper": ["NeurIPS paper"],
-    "ICML oral/best paper": ["ICML paper"],
-    "ICLR oral/best paper": ["ICLR paper"],
-    "IOI medalist": ["IOI Silver/Bronze"],
-    "Kaggle Grandmaster": ["Kaggle Master"],
-    "Y Combinator": ["VC-backed (Series A/B)"],
-  };
-  for (const [t1, t2s] of Object.entries(tier1ConferenceMap)) {
-    if (matchedTier1.includes(t1)) {
-      matchedTier2 = matchedTier2.filter(l => !t2s.includes(l));
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Compute Score
-  // ---------------------------------------------------------------------------
-
-  let score: number;
-  let tier: 1 | 2 | 3 | null;
+  // Calculate score
+  let score = 0;
 
   if (matchedTier1.length > 0) {
+    // Tier 1: base 85 + 5 per additional match, max 100
     score = 85 + (matchedTier1.length - 1) * 5;
-    tier = 1;
   } else if (matchedTier2.length > 0) {
+    // Tier 2: each match = +8 points starting from 40
     score = 40 + matchedTier2.length * 8;
-    tier = matchedTier2.length >= 2 ? 2 : 3;
-  } else {
-    score = 0;
-    tier = null;
   }
 
-  // False positive penalty
+  // False positive penalty: each = -10 points
   score -= falsePositiveFlags.length * 10;
 
   // Bonus: Bay Area confirmed
-  if (joined.includes("bay area") || joined.includes("san francisco") || joined.includes("mountain view") ||
-      joined.includes("palo alto") || joined.includes("menlo park") || joined.includes("sunnyvale") ||
-      joined.includes("santa clara") || joined.includes("silicon valley") || joined.includes("berkeley, ca") ||
-      joined.includes("redwood city") || joined.includes("san jose")) {
-    score += 5;
-  }
+  const bayAreaTerms = [
+    "bay area", "san francisco", "sf", "silicon valley", "palo alto",
+    "mountain view", "menlo park", "redwood city", "sunnyvale",
+    "santa clara", "berkeley", "oakland", "san jose", "marin", "east bay",
+  ];
+  const hasBayArea = bayAreaTerms.some((term) => joined.includes(term));
+  if (hasBayArea) score += 5;
 
-  // Bonus: Founder / 0-to-1 signals
-  if (joined.includes("founded") || joined.includes("co-founder") || joined.includes("cofounder") ||
-      joined.includes("0-to-1") || joined.includes("zero to one") || joined.includes("built from scratch")) {
-    score += 5;
-  }
+  // Bonus: founder / 0-to-1 evidence
+  const founderTerms = ["founded", "co-founder", "cofounder", "0-to-1", "zero to one", "built from scratch"];
+  const hasFounder = founderTerms.some((term) => joined.includes(term));
+  if (hasFounder) score += 5;
 
   // Bonus: B2B + application layer
-  if ((joined.includes("b2b") || joined.includes("enterprise") || joined.includes("saas")) &&
-      (joined.includes("application") || joined.includes("product") || joined.includes("platform"))) {
-    score += 5;
-  }
+  const b2bTerms = ["b2b", "enterprise", "saas", "application layer"];
+  const hasB2B = b2bTerms.some((term) => joined.includes(term));
+  if (hasB2B) score += 5;
 
-  // Clamp
+  // Cap at 100, floor at 0
   score = Math.max(0, Math.min(100, score));
 
-  // Adjust tier based on final score
-  if (score >= 85) tier = 1;
-  else if (score >= 60) tier = tier === 1 ? 1 : 2;
-  else if (score >= 40) tier = tier ?? 3;
-  else if (score > 0) tier = 3;
-  else tier = null;
+  // Determine tier
+  let tier: 1 | 2 | 3 | null = null;
+  if (matchedTier1.length > 0) {
+    tier = 1;
+  } else if (matchedTier2.length >= 2) {
+    tier = 2;
+  } else if (matchedTier2.length === 1 || score > 0) {
+    tier = 3;
+  }
 
   // Generate summary
   let summary: string;
   if (tier === 1) {
-    summary = `Top 5% candidate with ${matchedTier1.length} Tier 1 signal(s): ${matchedTier1.slice(0, 3).join(", ")}${matchedTier1.length > 3 ? ` and ${matchedTier1.length - 3} more` : ""}. Immediate outreach recommended.`;
+    summary = `Immediate outreach — ${matchedTier1[0]}${matchedTier1.length > 1 ? ` and ${matchedTier1.length - 1} other Tier 1 signal(s)` : ""} confirmed.`;
   } else if (tier === 2) {
-    summary = `Strong candidate with ${matchedTier2.length} Tier 2 signal(s): ${matchedTier2.slice(0, 3).join(", ")}${matchedTier2.length > 3 ? ` and ${matchedTier2.length - 3} more` : ""}. Build the case with additional verification.`;
+    summary = `Build the case — ${matchedTier2.length} Tier 2 signal(s) found: ${matchedTier2.slice(0, 3).join(", ")}${matchedTier2.length > 3 ? "..." : ""}.`;
   } else if (tier === 3) {
-    const allSignals = [...matchedTier1, ...matchedTier2];
-    summary = allSignals.length > 0
-      ? `Weak signal — ${allSignals.length} indicator(s) found but insufficient for immediate outreach.`
-      : "No verifiable EEA signals detected.";
+    summary = `Weak signal — limited evidence of exceptional ability. ${matchedTier2.length > 0 ? matchedTier2[0] + " noted." : "Requires further research."}`;
   } else {
-    summary = "No verifiable EEA signals detected in available data.";
+    summary = "No verifiable evidence of exceptional ability found in available signals.";
   }
 
   if (falsePositiveFlags.length > 0) {
-    summary += ` Note: ${falsePositiveFlags.length} false positive flag(s) detected.`;
+    summary += ` (${falsePositiveFlags.length} false positive flag${falsePositiveFlags.length > 1 ? "s" : ""} detected.)`;
   }
 
   return {

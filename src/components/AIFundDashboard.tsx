@@ -18,9 +18,6 @@ import {
   Zap,
   Settings,
   Search,
-  BookOpen,
-  Calendar,
-  Layers,
 } from "lucide-react";
 
 // Tab components
@@ -33,14 +30,10 @@ import ResidencyTrackerTab from "@/components/ai-fund/ResidencyTrackerTab";
 import InvestmentReviewTab from "@/components/ai-fund/InvestmentReviewTab";
 import IntelligenceTab from "@/components/ai-fund/IntelligenceTab";
 import AiFundSettingsTab from "@/components/ai-fund/SettingsTab";
-import FindFoundersTab from "@/components/ai-fund/FindFoundersTab";
-import EEASignalsTab from "@/components/ai-fund/EEASignalsTab";
-import EventsTab from "@/components/ai-fund/EventsTab";
-import StrategyTab from "@/components/ai-fund/StrategyTab";
+import FounderFinderTab from "@/components/ai-fund/FounderFinderTab";
 
 type AiFundTab =
   | "overview"
-  | "find_founders"
   | "concepts"
   | "talent"
   | "matching"
@@ -48,14 +41,11 @@ type AiFundTab =
   | "residencies"
   | "investment"
   | "intelligence"
-  | "eea_signals"
-  | "events"
-  | "strategy"
+  | "sourcing"
   | "settings";
 
 const TABS: { id: AiFundTab; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview", icon: BarChart3 },
-  { id: "find_founders", label: "Find Founders", icon: Search },
   { id: "concepts", label: "Concepts", icon: Briefcase },
   { id: "talent", label: "Talent Pool", icon: Users },
   { id: "matching", label: "Matching", icon: Link2 },
@@ -63,9 +53,7 @@ const TABS: { id: AiFundTab; label: string; icon: React.ElementType }[] = [
   { id: "residencies", label: "Residencies", icon: Home },
   { id: "investment", label: "Investment", icon: FileCheck },
   { id: "intelligence", label: "Intelligence", icon: Zap },
-  { id: "eea_signals", label: "EEA Signals", icon: BookOpen },
-  { id: "events", label: "Events", icon: Calendar },
-  { id: "strategy", label: "DL.AI Strategy", icon: Layers },
+  { id: "sourcing", label: "Find Founders", icon: Search },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -77,8 +65,6 @@ export default function AIFundDashboard() {
     switch (activeTab) {
       case "overview":
         return <OverviewTab workspace={workspace} />;
-      case "find_founders":
-        return <FindFoundersTab workspace={workspace} />;
       case "concepts":
         return <ConceptPipelineTab workspace={workspace} />;
       case "talent":
@@ -93,12 +79,8 @@ export default function AIFundDashboard() {
         return <InvestmentReviewTab workspace={workspace} />;
       case "intelligence":
         return <IntelligenceTab workspace={workspace} />;
-      case "eea_signals":
-        return <EEASignalsTab workspace={workspace} />;
-      case "events":
-        return <EventsTab workspace={workspace} />;
-      case "strategy":
-        return <StrategyTab workspace={workspace} />;
+      case "sourcing":
+        return <FounderFinderTab workspace={workspace} />;
       case "settings":
         return <AiFundSettingsTab workspace={workspace} />;
       default:

@@ -29,6 +29,7 @@ const INTEGRATION_LABELS: Record<IntegrationProvider, string> = {
   github: "GitHub",
   parallel: "Parallel",
   anthropic: "Claude",
+  huggingface: "Hugging Face",
 };
 
 export function createDefaultAiFundSettings(): AiFundAppSettings {
@@ -70,6 +71,14 @@ export function createDefaultAiFundSettings(): AiFundAppSettings {
         source: "missing",
         maskedKey: null,
         model: null,
+      },
+      huggingface: {
+        provider: "huggingface",
+        label: INTEGRATION_LABELS.huggingface,
+        configured: false,
+        source: "missing",
+        maskedKey: null,
+        model: "BAAI/bge-small-en-v1.5",
       },
     },
     sourcingChannels: [

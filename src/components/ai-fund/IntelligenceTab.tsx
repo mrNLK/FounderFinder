@@ -27,6 +27,7 @@ import {
   runHarmonicIntelligence,
   updateHarmonicSavedSearchStatus,
 } from "@/lib/harmonic";
+import { normalizeComparableUrl } from "@/lib/url-utils";
 
 interface Props {
   workspace: AiFundWorkspace;
@@ -53,10 +54,6 @@ const PROVIDER_LABELS: Record<IntelligenceProvider, string> = {
   github: "GitHub API",
   manual: "Manual Import",
 };
-
-function normalizeComparableUrl(value: string | null | undefined): string | null {
-  return value?.trim().toLowerCase().replace(/\/+$/, "") || null;
-}
 
 function getChannelLabel(
   settingsChannels: AiFundSourcingChannel[],
