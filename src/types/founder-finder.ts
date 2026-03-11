@@ -12,12 +12,30 @@
 export type EEAScore = {
   tier: 1 | 2 | 3 | null;
   score: number;
+  confidence: "high" | "medium" | "low";
   matchedTier1: string[];
   matchedTier2: string[];
   falsePositiveFlags: string[];
+  fundingSignals: string[];
+  recencyBonus: number;
   summary: string;
   hfClassifications?: Array<{ signal: string; label: string; score: number }>;
 };
+
+// ---------------------------------------------------------------------------
+// Pipeline Analytics
+// ---------------------------------------------------------------------------
+
+export interface PipelineAnalytics {
+  totalCandidates: number;
+  tierBreakdown: { tier1: number; tier2: number; tier3: number; unscored: number };
+  avgScore: number;
+  medianScore: number;
+  scoreDistribution: { bucket: string; count: number }[];
+  topSignals: { signal: string; count: number }[];
+  confidenceBreakdown: { high: number; medium: number; low: number };
+  fundingBreakdown: { funded: number; unfunded: number };
+}
 
 // ---------------------------------------------------------------------------
 // Candidate Result (from Exa + scoring)

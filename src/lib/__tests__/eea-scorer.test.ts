@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { scoreCandidate } from "../eea-scorer";
+import { scoreCandidate, computePipelineAnalytics } from "../eea-scorer";
+import type { CandidateResult } from "@/types/founder-finder";
 
 describe("scoreCandidate", () => {
   // -------------------------------------------------------------------------
@@ -112,8 +113,8 @@ describe("scoreCandidate", () => {
 
     it("scores multiple Tier 1 signals higher", () => {
       const result = scoreCandidate([
-        "Y Combinator W23 founder",
-        "NeurIPS 2023 oral presentation on LLM alignment",
+        "Y Combinator founder",
+        "NeurIPS oral presentation on LLM alignment",
       ]);
       expect(result.tier).toBe(1);
       expect(result.score).toBe(90); // 85 + 5
@@ -404,5 +405,249 @@ describe("scoreCandidate", () => {
       const result = scoreCandidate(["TEDx talk on AI", "Kaggle Expert"]);
       expect(result.summary).toContain("false positive flag");
     });
+
+    it("appends funding info to summary when funding signals present", () => {
+      const result = scoreCandidate(["Y Combinator founder", "Raised Series A from Sequoia"]);
+      expect(result.summary).toContain("Funding:");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Confidence scoring
+  // -------------------------------------------------------------------------
+
+  describe("Confidence", () => {
+    it("returns high confidence for multiple strong signals, no FP", () => {
+      const result = scoreCandidate([
+        "Y Combinator founder",
+        "Thiel Fellow",
+        "NeurIPS oral presentation",
+      ]);
+      expect(result.confidence).toBe("high");
+    });
+
+    it("returns high confidence for 2+ Tier 1 signals", () => {
+      const result = scoreCandidate([
+        "Y Combinator founder",
+        "ICPC World Finals competitor",
+      ]);
+      expect(result.confidence).toBe("high");
+    });
+
+    it("returns medium confidence for single signal with no FP", () => {
+      const result = scoreCandidate(["Published at NeurIPS"]);
+      expect(result.confidence).toBe("medium");
+    });
+
+    it("returns low confidence for no signals", () => {
+      const result = scoreCandidate(["nothing special here"]);
+      expect(result.confidence).toBe("low");
+    });
+
+    it("returns low confidence for only false positive signals", () => {
+      const result = scoreCandidate(["TEDx speaker", "Kaggle Expert"]);
+      expect(result.confidence).toBe("low");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Funding signals
+  // -------------------------------------------------------------------------
+
+  describe("Funding signals", () => {
+    it("detects seed funding", () => {
+      const result = scoreCandidate(["Raised seed round for AI startup"]);
+      expect(result.fundingSignals).toContain("Seed funded");
+    });
+
+    it("detects Series A+", () => {
+      const result = scoreCandidate(["Raised Series B from top VCs"]);
+      expect(result.fundingSignals).toContain("Series A+");
+    });
+
+    it("detects top-tier VC (Sequoia)", () => {
+      const result = scoreCandidate(["Backed by Sequoia Capital"]);
+      expect(result.fundingSignals).toContain("Top-tier VC backed");
+    });
+
+    it("detects top-tier VC (a16z)", () => {
+      const result = scoreCandidate(["Funded by a16z"]);
+      expect(result.fundingSignals).toContain("Top-tier VC backed");
+    });
+
+    it("detects revenue traction", () => {
+      const result = scoreCandidate(["$5M ARR growing 3x YoY"]);
+      expect(result.fundingSignals).toContain("Revenue traction");
+    });
+
+    it("detects unicorn valuation", () => {
+      const result = scoreCandidate(["Company valued at $2B after latest round"]);
+      expect(result.fundingSignals).toContain("Unicorn valuation");
+    });
+
+    it("adds funding weight to score", () => {
+      const without = scoreCandidate(["Y Combinator founder"]);
+      const with_ = scoreCandidate(["Y Combinator founder", "Raised Series A from Sequoia"]);
+      // Series A+ = 5 pts, Top-tier VC = 5 pts
+      expect(with_.score).toBeGreaterThan(without.score);
+      expect(with_.fundingSignals.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("returns empty array when no funding signals", () => {
+      const result = scoreCandidate(["Published at NeurIPS"]);
+      expect(result.fundingSignals).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Recency bonus
+  // -------------------------------------------------------------------------
+
+  describe("Recency bonus", () => {
+    it("gives +5 for current year", () => {
+      const currentYear = new Date().getFullYear();
+      const result = scoreCandidate([`Published at NeurIPS ${currentYear}`, "NSF GRFP"]);
+      expect(result.recencyBonus).toBe(5);
+    });
+
+    it("gives +3 for 2-3 years ago", () => {
+      const threeYearsAgo = new Date().getFullYear() - 3;
+      const result = scoreCandidate([`NeurIPS ${threeYearsAgo}`, "NSF GRFP"]);
+      expect(result.recencyBonus).toBe(3);
+    });
+
+    it("gives +1 for 4-5 years ago", () => {
+      const fiveYearsAgo = new Date().getFullYear() - 5;
+      const result = scoreCandidate([`NeurIPS ${fiveYearsAgo}`, "NSF GRFP"]);
+      expect(result.recencyBonus).toBe(1);
+    });
+
+    it("gives 0 for 6+ years ago", () => {
+      const result = scoreCandidate(["NeurIPS 2015", "NSF GRFP"]);
+      expect(result.recencyBonus).toBe(0);
+    });
+
+    it("gives 0 for no year mentioned", () => {
+      const result = scoreCandidate(["Y Combinator founder"]);
+      expect(result.recencyBonus).toBe(0);
+    });
+  });
+});
+
+// ===========================================================================
+// computePipelineAnalytics
+// ===========================================================================
+
+function makeCandidate(overrides: Partial<CandidateResult>): CandidateResult {
+  return {
+    name: "Test Person",
+    title: "CEO",
+    company: "TestCo",
+    linkedinUrl: null,
+    githubUrl: null,
+    location: "SF",
+    isFounder: true,
+    b2bFocus: "B2B",
+    technicalDepth: "Deep technical",
+    eeaSignals: "",
+    profileUrl: "https://example.com",
+    snippet: "",
+    eeaScore: {
+      tier: null,
+      score: 0,
+      confidence: "low",
+      matchedTier1: [],
+      matchedTier2: [],
+      falsePositiveFlags: [],
+      fundingSignals: [],
+      recencyBonus: 0,
+      summary: "",
+    },
+    ...overrides,
+  };
+}
+
+describe("computePipelineAnalytics", () => {
+  it("returns zeroed analytics for empty array", () => {
+    const analytics = computePipelineAnalytics([]);
+    expect(analytics.totalCandidates).toBe(0);
+    expect(analytics.avgScore).toBe(0);
+    expect(analytics.medianScore).toBe(0);
+    expect(analytics.topSignals).toHaveLength(0);
+  });
+
+  it("counts tier breakdown correctly", () => {
+    const candidates = [
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, tier: 1, score: 90 } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, tier: 1, score: 95 } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, tier: 2, score: 60 } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, tier: 3, score: 40 } }),
+      makeCandidate({}), // unscored (tier null)
+    ];
+    const analytics = computePipelineAnalytics(candidates);
+    expect(analytics.tierBreakdown).toEqual({ tier1: 2, tier2: 1, tier3: 1, unscored: 1 });
+  });
+
+  it("calculates avg and median scores", () => {
+    const candidates = [
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, score: 10 } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, score: 50 } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, score: 90 } }),
+    ];
+    const analytics = computePipelineAnalytics(candidates);
+    expect(analytics.avgScore).toBe(50);
+    expect(analytics.medianScore).toBe(50);
+  });
+
+  it("builds score distribution buckets", () => {
+    const candidates = [
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, score: 5 } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, score: 55 } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, score: 92 } }),
+    ];
+    const analytics = computePipelineAnalytics(candidates);
+    expect(analytics.scoreDistribution.find((b) => b.bucket === "0-9")?.count).toBe(1);
+    expect(analytics.scoreDistribution.find((b) => b.bucket === "50-59")?.count).toBe(1);
+    expect(analytics.scoreDistribution.find((b) => b.bucket === "90-100")?.count).toBe(1);
+  });
+
+  it("aggregates top signals across candidates", () => {
+    const candidates = [
+      makeCandidate({
+        eeaScore: { ...makeCandidate({}).eeaScore, matchedTier1: ["Y Combinator"], matchedTier2: ["VC-backed"] },
+      }),
+      makeCandidate({
+        eeaScore: { ...makeCandidate({}).eeaScore, matchedTier1: ["Y Combinator"], matchedTier2: [] },
+      }),
+      makeCandidate({
+        eeaScore: { ...makeCandidate({}).eeaScore, matchedTier1: [], matchedTier2: ["VC-backed"] },
+      }),
+    ];
+    const analytics = computePipelineAnalytics(candidates);
+    const yc = analytics.topSignals.find((s) => s.signal === "Y Combinator");
+    const vc = analytics.topSignals.find((s) => s.signal === "VC-backed");
+    expect(yc?.count).toBe(2);
+    expect(vc?.count).toBe(2);
+  });
+
+  it("counts confidence breakdown", () => {
+    const candidates = [
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, confidence: "high" } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, confidence: "high" } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, confidence: "medium" } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, confidence: "low" } }),
+    ];
+    const analytics = computePipelineAnalytics(candidates);
+    expect(analytics.confidenceBreakdown).toEqual({ high: 2, medium: 1, low: 1 });
+  });
+
+  it("counts funding breakdown", () => {
+    const candidates = [
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, fundingSignals: ["Series A+"] } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, fundingSignals: [] } }),
+      makeCandidate({ eeaScore: { ...makeCandidate({}).eeaScore, fundingSignals: ["Seed funded", "Top-tier VC backed"] } }),
+    ];
+    const analytics = computePipelineAnalytics(candidates);
+    expect(analytics.fundingBreakdown).toEqual({ funded: 2, unfunded: 1 });
   });
 });

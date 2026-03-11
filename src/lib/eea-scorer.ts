@@ -6,7 +6,7 @@
  * weighted composite scorer in aifund-scoring.ts.
  */
 
-import type { EEAScore } from "@/types/founder-finder";
+import type { EEAScore, PipelineAnalytics, CandidateResult } from "@/types/founder-finder";
 
 // ---------------------------------------------------------------------------
 // Tier 1 Signals — any single one = score 85+, tier 1, immediate outreach
@@ -379,6 +379,122 @@ const FALSE_POSITIVE_CHECKS: FalsePositiveCheck[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Funding / Investor Signals (Crunchbase-style)
+// ---------------------------------------------------------------------------
+
+interface FundingSignal {
+  label: string;
+  matchers: ((joined: string) => boolean)[];
+  weight: number; // bonus points
+}
+
+const FUNDING_SIGNALS: FundingSignal[] = [
+  {
+    label: "Seed funded",
+    matchers: [
+      (s) => s.includes("seed round") || s.includes("seed funding") || s.includes("pre-seed"),
+    ],
+    weight: 3,
+  },
+  {
+    label: "Series A+",
+    matchers: [
+      (s) => /series [a-d]/i.test(s),
+    ],
+    weight: 5,
+  },
+  {
+    label: "Top-tier VC backed",
+    matchers: [
+      (s) => s.includes("sequoia"),
+      (s) => s.includes("andreessen") || s.includes("a16z"),
+      (s) => s.includes("benchmark"),
+      (s) => s.includes("greylock"),
+      (s) => s.includes("accel"),
+      (s) => s.includes("lightspeed"),
+      (s) => s.includes("founders fund"),
+      (s) => s.includes("khosla"),
+    ],
+    weight: 5,
+  },
+  {
+    label: "Notable angel investors",
+    matchers: [
+      (s) => s.includes("angel round") || s.includes("angel investor"),
+      (s) => s.includes("backed by"),
+    ],
+    weight: 2,
+  },
+  {
+    label: "Revenue traction",
+    matchers: [
+      (s) => /\$\d+[km]?\s*arr/i.test(s),
+      (s) => s.includes("revenue") && /\$\d/.test(s),
+      (s) => s.includes("profitable"),
+    ],
+    weight: 4,
+  },
+  {
+    label: "Unicorn valuation",
+    matchers: [
+      (s) => s.includes("unicorn"),
+      (s) => {
+        const match = s.match(/valued?\s*(?:at\s*)?\$(\d+(?:\.\d+)?)\s*(b|billion)/i);
+        return !!match;
+      },
+    ],
+    weight: 6,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Recency Detection
+// ---------------------------------------------------------------------------
+
+function detectRecencyBonus(joined: string): number {
+  const currentYear = new Date().getFullYear();
+  const yearPattern = /\b(20\d{2})\b/g;
+  let mostRecentYear = 0;
+  let match;
+  while ((match = yearPattern.exec(joined)) !== null) {
+    const year = parseInt(match[1], 10);
+    if (year <= currentYear && year > mostRecentYear) {
+      mostRecentYear = year;
+    }
+  }
+
+  if (mostRecentYear === 0) return 0;
+  const age = currentYear - mostRecentYear;
+  if (age <= 1) return 5;  // very recent
+  if (age <= 3) return 3;  // recent
+  if (age <= 5) return 1;  // somewhat recent
+  return 0;                 // stale
+}
+
+// ---------------------------------------------------------------------------
+// Confidence Assessment
+// ---------------------------------------------------------------------------
+
+function assessConfidence(
+  matchedTier1: string[],
+  matchedTier2: string[],
+  falsePositiveFlags: string[],
+  signalCount: number,
+): "high" | "medium" | "low" {
+  const totalMatches = matchedTier1.length + matchedTier2.length;
+
+  // High: multiple strong signals, no false positives
+  if (totalMatches >= 3 && falsePositiveFlags.length === 0) return "high";
+  if (matchedTier1.length >= 2) return "high";
+
+  // Medium: at least one signal, few false positives
+  if (totalMatches >= 1 && falsePositiveFlags.length <= 1) return "medium";
+  if (signalCount >= 3 && totalMatches >= 1) return "medium";
+
+  return "low";
+}
+
+// ---------------------------------------------------------------------------
 // Scoring Logic
 // ---------------------------------------------------------------------------
 
@@ -467,6 +583,20 @@ export function scoreCandidate(signals: string[]): EEAScore {
   const hasB2B = b2bTerms.some((term) => joined.includes(term));
   if (hasB2B) score += 5;
 
+  // Match funding signals
+  const fundingSignals: string[] = [];
+  for (const fs of FUNDING_SIGNALS) {
+    const isMatch = fs.matchers.some((m) => m(joined));
+    if (isMatch) {
+      fundingSignals.push(fs.label);
+      score += fs.weight;
+    }
+  }
+
+  // Recency bonus
+  const recencyBonus = detectRecencyBonus(joined);
+  score += recencyBonus;
+
   // Cap at 100, floor at 0
   score = Math.max(0, Math.min(100, score));
 
@@ -479,6 +609,14 @@ export function scoreCandidate(signals: string[]): EEAScore {
   } else if (matchedTier2.length === 1 || score > 0) {
     tier = 3;
   }
+
+  // Confidence assessment
+  const confidence = assessConfidence(
+    matchedTier1,
+    matchedTier2,
+    falsePositiveFlags,
+    signals.length,
+  );
 
   // Generate summary
   let summary: string;
@@ -496,12 +634,96 @@ export function scoreCandidate(signals: string[]): EEAScore {
     summary += ` (${falsePositiveFlags.length} false positive flag${falsePositiveFlags.length > 1 ? "s" : ""} detected.)`;
   }
 
+  if (fundingSignals.length > 0) {
+    summary += ` Funding: ${fundingSignals.join(", ")}.`;
+  }
+
   return {
     tier,
     score,
+    confidence,
     matchedTier1,
     matchedTier2,
     falsePositiveFlags,
+    fundingSignals,
+    recencyBonus,
     summary,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline Analytics
+// ---------------------------------------------------------------------------
+
+export function computePipelineAnalytics(
+  candidates: CandidateResult[],
+): PipelineAnalytics {
+  const totalCandidates = candidates.length;
+
+  // Tier breakdown
+  const tierBreakdown = { tier1: 0, tier2: 0, tier3: 0, unscored: 0 };
+  for (const c of candidates) {
+    if (c.eeaScore.tier === 1) tierBreakdown.tier1++;
+    else if (c.eeaScore.tier === 2) tierBreakdown.tier2++;
+    else if (c.eeaScore.tier === 3) tierBreakdown.tier3++;
+    else tierBreakdown.unscored++;
+  }
+
+  // Score stats
+  const scores = candidates.map((c) => c.eeaScore.score).sort((a, b) => a - b);
+  const avgScore = totalCandidates > 0
+    ? Math.round(scores.reduce((sum, s) => sum + s, 0) / totalCandidates)
+    : 0;
+  const medianScore = totalCandidates > 0
+    ? scores[Math.floor(totalCandidates / 2)]
+    : 0;
+
+  // Score distribution (10-point buckets)
+  const buckets = ["0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80-89", "90-100"];
+  const scoreDistribution = buckets.map((bucket) => ({ bucket, count: 0 }));
+  for (const s of scores) {
+    const idx = Math.min(Math.floor(s / 10), 9);
+    scoreDistribution[idx].count++;
+  }
+
+  // Top signals (frequency count across all candidates)
+  const signalCounts = new Map<string, number>();
+  for (const c of candidates) {
+    for (const s of c.eeaScore.matchedTier1) {
+      signalCounts.set(s, (signalCounts.get(s) ?? 0) + 1);
+    }
+    for (const s of c.eeaScore.matchedTier2) {
+      signalCounts.set(s, (signalCounts.get(s) ?? 0) + 1);
+    }
+    for (const s of c.eeaScore.fundingSignals) {
+      signalCounts.set(s, (signalCounts.get(s) ?? 0) + 1);
+    }
+  }
+  const topSignals = Array.from(signalCounts.entries())
+    .map(([signal, count]) => ({ signal, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // Confidence breakdown
+  const confidenceBreakdown = { high: 0, medium: 0, low: 0 };
+  for (const c of candidates) {
+    confidenceBreakdown[c.eeaScore.confidence]++;
+  }
+
+  // Funding breakdown
+  let funded = 0;
+  for (const c of candidates) {
+    if (c.eeaScore.fundingSignals.length > 0) funded++;
+  }
+
+  return {
+    totalCandidates,
+    tierBreakdown,
+    avgScore,
+    medianScore,
+    scoreDistribution,
+    topSignals,
+    confidenceBreakdown,
+    fundingBreakdown: { funded, unfunded: totalCandidates - funded },
   };
 }

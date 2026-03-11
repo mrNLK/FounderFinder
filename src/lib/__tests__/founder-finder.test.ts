@@ -23,9 +23,12 @@ function makeCandidate(overrides: Partial<CandidateResult> = {}): CandidateResul
     eeaScore: {
       tier: 1,
       score: 85,
+      confidence: "high",
       matchedTier1: ["Y Combinator"],
       matchedTier2: [],
       falsePositiveFlags: [],
+      fundingSignals: [],
+      recencyBonus: 0,
       summary: "Immediate outreach — Y Combinator confirmed.",
     },
     profileUrl: "https://example.com/janedoe",

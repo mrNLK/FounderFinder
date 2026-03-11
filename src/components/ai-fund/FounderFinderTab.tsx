@@ -49,6 +49,8 @@ import {
 import { normalizeComparableUrl } from "@/lib/url-utils";
 import type { DuplicateGroup, SignalClassification, ExtractedEntities } from "@/lib/huggingface";
 import { findDuplicateCandidates, classifySignals, extractEntities } from "@/lib/huggingface";
+import CandidateCard from "./CandidateCard";
+import PipelineAnalyticsPanel from "./PipelineAnalyticsPanel";
 
 interface Props {
   workspace: AiFundWorkspace;
@@ -856,6 +858,11 @@ export default function FounderFinderTab({ workspace }: Props) {
             Uses Exa Websets with 5 search queries and 9 enrichment columns.
           </p>
         </div>
+      )}
+
+      {/* Analytics Panel */}
+      {candidates.length > 0 && (
+        <PipelineAnalyticsPanel candidates={candidates} />
       )}
 
       {/* Results Grid */}
