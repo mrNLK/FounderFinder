@@ -1,240 +1,221 @@
 /**
- *  * Founder Finder Client Library
-  *
-   * Client-side wrappers for the founder-source and founder-enrich
-    * Supabase Edge Functions. Follows the same pattern as aifund-settings.ts.
-     */
-
-     import { supabase } from "@/integrations/supabase/client";
-     import type {
-       CandidateResult,
-         FounderSourceResponse,
-           FounderEnrichResponse,
-             ParallelEnrichmentResult,
-             } from "@/types/founder-finder";
-
-             // ---------------------------------------------------------------------------
-             // Error Extraction (matches aifund-settings.ts pattern)
-             // ---------------------------------------------------------------------------
-
-             interface FunctionErrorPayload {
-               error?: {
-                   message?: string;
-                       code?: string;
-                         };
-                         }
-
-                         async function extractFunctionErrorMessage(error: unknown): Promise<string> {
-                           const defaultMessage = error instanceof Error ? error.message : "Unknown error";
-                             const response = (error as { context?: Response } | null)?.context;
-
-                               if (!response) return defaultMessage;
-
-                                 try {
-                                     const payload = (await response.json()) as FunctionErrorPayload;
-                                         return payload.error?.message || defaultMessage;
-                                           } catch {
-                                               try {
-                                                     return await response.text();
-                                                         } catch {
-                                                               return defaultMessage;
-                                                                   }
-                                                                     }
-                                                                     }
-
-                                                                     // ---------------------------------------------------------------------------
-                                                                     // Source (Exa Websets)
-                                                                     // ---------------------------------------------------------------------------
-
-                                                                     export async function startFounderSource(config?: {
-                                                                       count?: number;
-                                                                         appendQueries?: boolean;
-                                                                         }): Promise<FounderSourceResponse> {
-                                                                           const { data, error } = await supabase.functions.invoke("founder-source", {
-                                                                               body: {
-                                                                                     count: config?.count ?? 20,
-                                                                                           appendQueries: config?.appendQueries ?? true,
-                                                                                               },
-                                                                                                 });
-
-                                                                                                   if (error) {
-                                                                                                       throw new Error(await extractFunctionErrorMessage(error));
-                                                                                                         }
-
-                                                                                                           return data as FounderSourceResponse;
-                                                                                                           }
-
-                                                                                                           // ---------------------------------------------------------------------------
-                                                                                                           // Enrich (Parallel Task Groups)
-                                                                                                           // ---------------------------------------------------------------------------
-
-                                                                                                           export async function startFounderEnrich(
-                                                                                                             candidates: Array<{
-                                                                                                                 name: string;
-                                                                                                                     company: string;
-                                                                                                                         title: string;
-                                                                                                                             profileUrl: string;
-                                                                                                                                 linkedinUrl: string | null;
-                                                                                                                                     existingSignals: string;
-                                                                                                                                       }>,
-                                                                                                                                       ): Promise<FounderEnrichResponse> {
-                                                                                                                                         const { data, error } = await supabase.functions.invoke("founder-enrich", {
-                                                                                                                                             body: {
-                                                                                                                                                   action: "create",
-                                                                                                                                                         candidates,
-                                                                                                                                                             },
-                                                                                                                                                               });
-
-                                                                                                                                                                 if (error) {
-                                                                                                                                                                     throw new Error(await extractFunctionErrorMessage(error));
-                                                                                                                                                                       }
-
-                                                                                                                                                                         return data as FounderEnrichResponse;
-                                                                                                                                                                         }
-
-                                                                                                                                                                         export async function pollFounderEnrich(
-                                                                                                                                                                           taskGroupId: string,
-                                                                                                                                                                           ): Promise<FounderEnrichResponse> {
-                                                                                                                                                                             const { data, error } = await supabase.functions.invoke("founder-enrich", {
-                                                                                                                                                                                 body: {
-                                                                                                                                                                                       action: "status",
-                                                                                                                                                                                             taskGroupId,
-                                                                                                                                                                                                 },
-                                                                                                                                                                                                   });
-
-                                                                                                                                                                                                     if (error) {
-                                                                                                                                                                                                         throw new Error(await extractFunctionErrorMessage(error));
-                                                                                                                                                                                                           }
-
-                                                                                                                                                                                                             return data as FounderEnrichResponse;
-                                                                                                                                                                                                             }
-
-                                                                                                                                                                                                             // ---------------------------------------------------------------------------
-                                                                                                                                                                                                             // Enrichment Shape Guard
-                                                                                                                                                                                                             // ---------------------------------------------------------------------------
-
-                                                                                                                                                                                                             /** Runtime check that an enrichment result has the expected shape. */
-                                                                                                                                                                                                             function isValidEnrichment(e: unknown): e is ParallelEnrichmentResult {
-                                                                                                                                                                                                               if (!e || typeof e !== "object") return false;
-                                                                                                                                                                                                                 const record = e as Record<string, unknown>;
-                                                                                                                                                                                                                   return typeof record.name === "string" && record.name.trim().length > 0;
-                                                                                                                                                                                                                   }
-
-                                                                                                                                                                                                                   function safeArray(value: unknown): string[] {
-                                                                                                                                                                                                                     return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-                                                                                                                                                                                                                     }
-
-                                                                                                                                                                                                                     // ---------------------------------------------------------------------------
-                                                                                                                                                                                                                     // Merge Enrichment into Candidates
-                                                                                                                                                                                                                     // ---------------------------------------------------------------------------
-
-                                                                                                                                                                                                                     export function mergeEnrichmentResults(
-                                                                                                                                                                                                                       candidates: CandidateResult[],
-                                                                                                                                                                                                                         enrichments: ParallelEnrichmentResult[],
-                                                                                                                                                                                                                         ): CandidateResult[] {
-                                                                                                                                                                                                                           // Filter out malformed enrichment entries before matching
-                                                                                                                                                                                                                             const validEnrichments = enrichments.filter(isValidEnrichment);
-
-                                                                                                                                                                                                                               return candidates.map((candidate) => {
-                                                                                                                                                                                                                                   const enrichment = validEnrichments.find(
-                                                                                                                                                                                                                                         (e) => e.name.toLowerCase().trim() === candidate.name.toLowerCase().trim(),
-                                                                                                                                                                                                                                             );
-
-                                                                                                                                                                                                                                                 if (!enrichment) return candidate;
-
-                                                                                                                                                                                                                                                     // Build expanded signals from enrichment (with safe array access)
-                                                                                                                                                                                                                                                         const newSignals: string[] = [];
-                                                                                                                                                                                                                                                             const pubs = safeArray(enrichment.publications);
-                                                                                                                                                                                                                                                                 if (pubs.length > 0) newSignals.push(...pubs);
-                                                                                                                                                                                                                                                                     const cp = safeArray(enrichment.competitive_programming);
-                                                                                                                                                                                                                                                                         if (cp.length > 0) newSignals.push(...cp);
-                                                                                                                                                                                                                                                                             const fellows = safeArray(enrichment.fellowships);
-                                                                                                                                                                                                                                                                                 if (fellows.length > 0) newSignals.push(...fellows);
-                                                                                                                                                                                                                                                                                     const oss = safeArray(enrichment.open_source);
-                                                                                                                                                                                                                                                                                         if (oss.length > 0) newSignals.push(...oss);
-                                                                                                                                                                                                                                                                                             const accel = safeArray(enrichment.accelerator);
-                                                                                                                                                                                                                                                                                                 if (accel.length > 0) newSignals.push(...accel);
-                                                                                                                                                                                                                                                                                                     const exits = safeArray(enrichment.prior_exits);
-                                                                                                                                                                                                                                                                                                         if (exits.length > 0) newSignals.push(...exits);
-                                                                                                                                                                                                                                                                                                             const talks = safeArray(enrichment.conference_talks);
-                                                                                                                                                                                                                                                                                                                 if (talks.length > 0) newSignals.push(...talks);
-                                                                                                                                                                                                                                                                                                                     const media = safeArray(enrichment.media_recognition);
-                                                                                                                                                                                                                                                                                                                         if (media.length > 0) newSignals.push(...media);
-                                                                                                                                                                                                                                                                                                                             if (enrichment.bay_area_confirmed) {
-                                                                                                                                                                                                                                                                                                                                   newSignals.push("Bay Area confirmed");
-                                                                                                                                                                                                                                                                                                                                       }
-                                                                                                                                                                                                                                                                                                                                           const b2b = safeArray(enrichment.b2b_signals);
-                                                                                                                                                                                                                                                                                                                                               if (b2b.length > 0) newSignals.push(...b2b);
-                                                                                                                                                                                                                                                                                                                                                   const zto = safeArray(enrichment.zero_to_one_evidence);
-                                                                                                                                                                                                                                                                                                                                                       if (zto.length > 0) newSignals.push(...zto);
-                                                                                                                                                                                                                                                                                                                                                           const patents = safeArray(enrichment.patents);
-                                                                                                                                                                                                                                                                                                                                                               if (patents.length > 0) newSignals.push(...patents);
-
-                                                                                                                                                                                                                                                                                                                                                                   const mergedSignals = candidate.eeaSignals
-                                                                                                                                                                                                                                                                                                                                                                         ? candidate.eeaSignals + " | " + newSignals.join(" | ")
-                                                                                                                                                                                                                                                                                                                                                                               : newSignals.join(" | ");
-
-                                                                                                                                                                                                                                                                                                                                                                                   return {
-                                                                                                                                                                                                                                                                                                                                                                                         ...candidate,
-                                                                                                                                                                                                                                                                                                                                                                                               linkedinUrl: candidate.linkedinUrl || enrichment.linkedin_url,
-                                                                                                                                                                                                                                                                                                                                                                                                     githubUrl: candidate.githubUrl || enrichment.github_url,
-                                                                                                                                                                                                                                                                                                                                                                                                           eeaSignals: mergedSignals,
-                                                                                                                                                                                                                                                                                                                                                                                                                 // The eeaScore will be recomputed by the caller after merging
-                                                                                                                                                                                                                                                                                                                                                                                                                     };
-                                                                                                                                                                                                                                                                                                                                                                                                                       });
-                                                                                                                                                                                                                                                                                                                                                                                                                       }
-
-                                                                                                                                                                                                                                                                                                                                                                                                                       // ---------------------------------------------------------------------------
-                                                                                                                                                                                                                                                                                                                                                                                                                       // CSV Export
-                                                                                                                                                                                                                                                                                                                                                                                                                       // ---------------------------------------------------------------------------
-
-                                                                                                                                                                                                                                                                                                                                                                                                                       function escapeCsv(value: string | null | undefined): string {
-                                                                                                                                                                                                                                                                                                                                                                                                                         if (value === null || value === undefined) return "";
-                                                                                                                                                                                                                                                                                                                                                                                                                           const str = String(value);
-                                                                                                                                                                                                                                                                                                                                                                                                                             if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                 return `"${str.replace(/"/g, '""')}"`;
-                                                                                                                                                                                                                                                                                                                                                                                                                                   }
-                                                                                                                                                                                                                                                                                                                                                                                                                                     return str;
-                                                                                                                                                                                                                                                                                                                                                                                                                                     }
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                     export function exportCandidatesCsv(candidates: CandidateResult[]): string {
-                                                                                                                                                                                                                                                                                                                                                                                                                                       const headers = [
-                                                                                                                                                                                                                                                                                                                                                                                                                                           "name", "title", "company", "location", "linkedin_url", "github_url",
-                                                                                                                                                                                                                                                                                                                                                                                                                                               "eea_tier", "eea_score", "tier1_signals", "tier2_signals",
-                                                                                                                                                                                                                                                                                                                                                                                                                                                   "false_positive_flags", "b2b_focus", "technical_depth",
-                                                                                                                                                                                                                                                                                                                                                                                                                                                       "eea_signals_raw", "eea_summary", "profile_url",
-                                                                                                                                                                                                                                                                                                                                                                                                                                                         ];
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                           const rows = candidates.map((c) => [
-                                                                                                                                                                                                                                                                                                                                                                                                                                                               escapeCsv(c.name),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                   escapeCsv(c.title),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                       escapeCsv(c.company),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                           escapeCsv(c.location),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                               escapeCsv(c.linkedinUrl),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   escapeCsv(c.githubUrl),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       escapeCsv(c.eeaScore.tier?.toString()),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           escapeCsv(c.eeaScore.score.toString()),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               escapeCsv(c.eeaScore.matchedTier1.join("; ")),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   escapeCsv(c.eeaScore.matchedTier2.join("; ")),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       escapeCsv(c.eeaScore.falsePositiveFlags.join("; ")),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           escapeCsv(c.b2bFocus),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               escapeCsv(c.technicalDepth),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   escapeCsv(c.eeaSignals),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       escapeCsv(c.eeaScore.summary),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           escapeCsv(c.profileUrl),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ].join(","));
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               return [headers.join(","), ...rows].join("\n");
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               }
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               export function downloadCsv(csv: string, filename: string): void {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   const url = URL.createObjectURL(blob);
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     const link = document.createElement("a");
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       link.href = url;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         link.download = filename;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           link.click();
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             URL.revokeObjectURL(url);
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+ * Founder Finder Client Library
+ *
+ * Client-side wrappers for the founder-source and founder-enrich
+ * Supabase Edge Functions. Follows the same pattern as aifund-settings.ts.
  */
+
+import { supabase } from "@/integrations/supabase/client";
+import type {
+  CandidateResult,
+  FounderSourceResponse,
+  FounderEnrichResponse,
+  ParallelEnrichmentResult,
+} from "@/types/founder-finder";
+
+// ---------------------------------------------------------------------------
+// Error Extraction (matches aifund-settings.ts pattern)
+// ---------------------------------------------------------------------------
+
+interface FunctionErrorPayload {
+  error?: {
+    message?: string;
+    code?: string;
+  };
+}
+
+async function extractFunctionErrorMessage(error: unknown): Promise<string> {
+  const defaultMessage = error instanceof Error ? error.message : "Unknown error";
+  const response = (error as { context?: Response } | null)?.context;
+
+  if (!response) return defaultMessage;
+
+  try {
+    const payload = (await response.json()) as FunctionErrorPayload;
+    return payload.error?.message || defaultMessage;
+  } catch {
+    try {
+      return await response.text();
+    } catch {
+      return defaultMessage;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Source (Exa Websets)
+// ---------------------------------------------------------------------------
+
+export async function startFounderSource(config?: {
+  count?: number;
+  appendQueries?: boolean;
+}): Promise<FounderSourceResponse> {
+  const { data, error } = await supabase.functions.invoke("founder-source", {
+    body: {
+      count: config?.count ?? 20,
+      appendQueries: config?.appendQueries ?? true,
+    },
+  });
+
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error));
+  }
+
+  return data as FounderSourceResponse;
+}
+
+// ---------------------------------------------------------------------------
+// Enrich (Parallel Task Groups)
+// ---------------------------------------------------------------------------
+
+export async function startFounderEnrich(
+  candidates: Array<{
+    name: string;
+    company: string;
+    title: string;
+    profileUrl: string;
+    linkedinUrl: string | null;
+    existingSignals: string;
+  }>,
+): Promise<FounderEnrichResponse> {
+  const { data, error } = await supabase.functions.invoke("founder-enrich", {
+    body: {
+      action: "create",
+      candidates,
+    },
+  });
+
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error));
+  }
+
+  return data as FounderEnrichResponse;
+}
+
+export async function pollFounderEnrich(
+  taskGroupId: string,
+): Promise<FounderEnrichResponse> {
+  const { data, error } = await supabase.functions.invoke("founder-enrich", {
+    body: {
+      action: "status",
+      taskGroupId,
+    },
+  });
+
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error));
+  }
+
+  return data as FounderEnrichResponse;
+}
+
+// ---------------------------------------------------------------------------
+// Merge Enrichment into Candidates
+// ---------------------------------------------------------------------------
+
+export function mergeEnrichmentResults(
+  candidates: CandidateResult[],
+  enrichments: ParallelEnrichmentResult[],
+): CandidateResult[] {
+  if (!Array.isArray(enrichments)) return candidates;
+
+  return candidates.map((candidate) => {
+    const enrichment = enrichments.find(
+      (e) =>
+        e?.name &&
+        e.name.toLowerCase().trim() === candidate.name.toLowerCase().trim(),
+    );
+
+    if (!enrichment) return candidate;
+
+    // Safely coerce enrichment fields that may arrive as strings or undefined
+    const toArray = (val: unknown): string[] => {
+      if (Array.isArray(val)) return val.filter((v) => typeof v === "string" && v.length > 0);
+      if (typeof val === "string" && val.length > 0) return [val];
+      return [];
+    };
+
+    // Build expanded signals from enrichment
+    const newSignals: string[] = [
+      ...toArray(enrichment.publications),
+      ...toArray(enrichment.competitive_programming),
+      ...toArray(enrichment.fellowships),
+      ...toArray(enrichment.open_source),
+      ...toArray(enrichment.accelerator),
+      ...toArray(enrichment.prior_exits),
+      ...toArray(enrichment.conference_talks),
+      ...toArray(enrichment.media_recognition),
+      ...toArray(enrichment.b2b_signals),
+      ...toArray(enrichment.zero_to_one_evidence),
+      ...toArray(enrichment.patents),
+    ];
+    if (enrichment.bay_area_confirmed) {
+      newSignals.push("Bay Area confirmed");
+    }
+
+    const mergedSignals = candidate.eeaSignals
+      ? candidate.eeaSignals + " | " + newSignals.join(" | ")
+      : newSignals.join(" | ");
+
+    return {
+      ...candidate,
+      linkedinUrl: candidate.linkedinUrl || enrichment.linkedin_url,
+      githubUrl: candidate.githubUrl || enrichment.github_url,
+      eeaSignals: mergedSignals,
+      // The eeaScore will be recomputed by the caller after merging
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CSV Export
+// ---------------------------------------------------------------------------
+
+function escapeCsv(value: string | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  const str = String(value);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+export function exportCandidatesCsv(candidates: CandidateResult[]): string {
+  const headers = [
+    "name", "title", "company", "location", "linkedin_url", "github_url",
+    "eea_tier", "eea_score", "tier1_signals", "tier2_signals",
+    "false_positive_flags", "b2b_focus", "technical_depth",
+    "eea_signals", "eea_summary", "profile_url",
+  ];
+
+  const rows = candidates.map((c) => [
+    escapeCsv(c.name),
+    escapeCsv(c.title),
+    escapeCsv(c.company),
+    escapeCsv(c.location),
+    escapeCsv(c.linkedinUrl),
+    escapeCsv(c.githubUrl),
+    escapeCsv(c.eeaScore.tier?.toString()),
+    escapeCsv(c.eeaScore.score.toString()),
+    escapeCsv(c.eeaScore.matchedTier1.join("; ")),
+    escapeCsv(c.eeaScore.matchedTier2.join("; ")),
+    escapeCsv(c.eeaScore.falsePositiveFlags.join("; ")),
+    escapeCsv(c.b2bFocus),
+    escapeCsv(c.technicalDepth),
+    escapeCsv(c.eeaSignals),
+    escapeCsv(c.eeaScore.summary),
+    escapeCsv(c.profileUrl),
+  ].join(","));
+
+  return [headers.join(","), ...rows].join("\n");
+}
+
+export function downloadCsv(csv: string, filename: string): void {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
