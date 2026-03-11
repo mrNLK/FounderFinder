@@ -1,0 +1,75 @@
+name: Deploy And Smoke
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: founderfinder-production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      SMOKE_SUPABASE_REFRESH_TOKEN: ${{ secrets.SMOKE_SUPABASE_REFRESH_TOKEN }}
+      SMOKE_HEADLESS: "true"
+      CI: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          test -n "$VERCEL_ORG_ID" || { echo "Missing VERCEL_ORG_ID"; exit 1; }
+          test -n "$VERCEL_PROJECT_ID" || { echo "Missing VERCEL_PROJECT_ID"; exit 1; }
+          test -n "$VERCEL_TOKEN" || { echo "Missing VERCEL_TOKEN"; exit 1; }
+          test -n "$SMOKE_SUPABASE_REFRESH_TOKEN" || { echo "Missing SMOKE_SUPABASE_REFRESH_TOKEN"; exit 1; }
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Pull Vercel environment
+        run: npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build production bundle
+        run: npx vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN" 2>&1 | tee /tmp/vercel-deploy.log
+          deployment_url="$(grep -Eo 'https://[^[:space:]]+\.vercel\.app' /tmp/vercel-deploy.log | tail -n 1)"
+          test -n "$deployment_url" || { echo "Unable to determine deployment URL"; exit 1; }
+          echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+          echo "SMOKE_BASE_URL=$deployment_url" >> "$GITHUB_ENV"
+
+      - name: Run Build OS smoke test
+        run: npm run smoke:build-os
+
+      - name: Upload smoke failure screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-os-smoke-failure
+          path: /tmp/founderfinder-build-os-smoke-failure.png
+          if-no-files-found: ignore
