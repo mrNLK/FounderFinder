@@ -41,7 +41,7 @@ type AiFundTab =
   | "residencies"
   | "investment"
   | "intelligence"
-  | "sourcing"
+  | "founderfinder"
   | "settings";
 
 const TABS: { id: AiFundTab; label: string; icon: React.ElementType }[] = [
@@ -53,7 +53,7 @@ const TABS: { id: AiFundTab; label: string; icon: React.ElementType }[] = [
   { id: "residencies", label: "Residencies", icon: Home },
   { id: "investment", label: "Investment", icon: FileCheck },
   { id: "intelligence", label: "Intelligence", icon: Zap },
-  { id: "sourcing", label: "Find Founders", icon: Search },
+  { id: "founderfinder", label: "Founder Finder", icon: Search },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -79,7 +79,7 @@ export default function AIFundDashboard() {
         return <InvestmentReviewTab workspace={workspace} />;
       case "intelligence":
         return <IntelligenceTab workspace={workspace} />;
-      case "sourcing":
+      case "founderfinder":
         return <FounderFinderTab workspace={workspace} />;
       case "settings":
         return <AiFundSettingsTab workspace={workspace} />;

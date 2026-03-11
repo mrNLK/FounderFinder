@@ -2,19 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle,
   Clock,
-  ExternalLink,
   Loader2,
   Plus,
-  Upload,
   XCircle,
 } from "lucide-react";
 import type {
   AiFundHarmonicFounderSummary,
-  AiFundHarmonicIntelligenceSummary,
   AiFundHarmonicSavedSearch,
   AiFundIntelligenceImportCandidate,
   AiFundIntelligenceRun,
-  AiFundProviderIntelligenceSummary,
   AiFundSourcingChannel,
   AiFundWorkspace,
   IntelligenceProvider,
@@ -27,7 +23,7 @@ import {
   runHarmonicIntelligence,
   updateHarmonicSavedSearchStatus,
 } from "@/lib/harmonic";
-import { normalizeComparableUrl } from "@/lib/url-utils";
+import IntelligenceRunDetail from "@/components/ai-fund/IntelligenceRunDetail";
 
 interface Props {
   workspace: AiFundWorkspace;
@@ -55,6 +51,10 @@ const PROVIDER_LABELS: Record<IntelligenceProvider, string> = {
   manual: "Manual Import",
 };
 
+function normalizeComparableUrl(value: string | null | undefined): string | null {
+  return value?.trim().toLowerCase().replace(/\/+$/, "") || null;
+}
+
 function getChannelLabel(
   settingsChannels: AiFundSourcingChannel[],
   channelId: string | null,
@@ -66,12 +66,22 @@ function getChannelLabel(
   return settingsChannels.find((channel) => channel.id === channelId)?.label || channelId;
 }
 
+function getRunQuery(run: AiFundIntelligenceRun): string {
+  if (typeof run.queryParams !== "object" || run.queryParams === null) {
+    return "No query";
+  }
+
+  const query = (run.queryParams as { query?: unknown }).query;
+  return typeof query === "string" && query.trim() ? query : "No query";
+}
+
 export default function IntelligenceTab({ workspace }: Props) {
   const [runs, setRuns] = useState<AiFundIntelligenceRun[]>([]);
   const [savedSearches, setSavedSearches] = useState<AiFundHarmonicSavedSearch[]>([]);
   const [loading, setLoading] = useState(true);
   const [savedSearchesLoading, setSavedSearchesLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedSearchError, setSavedSearchError] = useState<string | null>(null);
@@ -165,35 +175,6 @@ export default function IntelligenceTab({ workspace }: Props) {
   const resolveConceptName = (conceptId: string): string => (
     workspace.concepts.find((concept) => concept.id === conceptId)?.name || "Unknown concept"
   );
-
-  const getHarmonicSummary = (
-    run: AiFundIntelligenceRun,
-  ): AiFundHarmonicIntelligenceSummary | null => {
-    if (!run.resultsSummary || Array.isArray(run.resultsSummary)) {
-      return null;
-    }
-
-    const summary = run.resultsSummary as Partial<AiFundHarmonicIntelligenceSummary>;
-    return summary.source === "harmonic" && Array.isArray(summary.companies)
-      ? summary as AiFundHarmonicIntelligenceSummary
-      : null;
-  };
-
-  const getProviderSummary = (
-    run: AiFundIntelligenceRun,
-  ): AiFundProviderIntelligenceSummary | null => {
-    if (!run.resultsSummary || Array.isArray(run.resultsSummary)) {
-      return null;
-    }
-
-    const summary = run.resultsSummary as Partial<AiFundProviderIntelligenceSummary>;
-    return (
-      (summary.source === "exa" || summary.source === "parallel" || summary.source === "github") &&
-      Array.isArray(summary.items)
-    )
-      ? summary as AiFundProviderIntelligenceSummary
-      : null;
-  };
 
   const getRunError = (run: AiFundIntelligenceRun): string | null => {
     if (!run.resultsSummary || Array.isArray(run.resultsSummary)) {
@@ -361,6 +342,7 @@ export default function IntelligenceTab({ workspace }: Props) {
             }
           : existingRun
       )));
+      setSelectedRunId(run.id);
 
       if (formProvider === "harmonic") {
         await loadSavedSearches();
@@ -376,6 +358,10 @@ export default function IntelligenceTab({ workspace }: Props) {
       setSubmitting(false);
     }
   };
+
+  const selectedRun = selectedRunId
+    ? runs.find((run) => run.id === selectedRunId) || null
+    : null;
 
   if (loading) {
     return (
@@ -443,6 +429,12 @@ export default function IntelligenceTab({ workspace }: Props) {
             placeholder="Search query *"
             value={formQuery}
             onChange={(event) => setFormQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void handleCreate();
+              }
+            }}
             className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           />
 
@@ -591,6 +583,19 @@ export default function IntelligenceTab({ workspace }: Props) {
         )}
       </div>
 
+      {selectedRun && (
+        <IntelligenceRunDetail
+          run={selectedRun}
+          workspace={workspace}
+          importingKey={importingKey}
+          onClose={() => setSelectedRunId(null)}
+          onImportCandidate={handleImportCandidate}
+          onImportFounder={handleImportFounder}
+          isImportCandidateImported={isImportCandidateImported}
+          isFounderImported={isFounderImported}
+        />
+      )}
+
       {runs.length === 0 ? (
         <div className="py-12 text-center bg-card border border-border rounded-xl">
           <p className="text-sm text-muted-foreground">
@@ -602,12 +607,20 @@ export default function IntelligenceTab({ workspace }: Props) {
           {runs.map((run) => {
             const config = STATUS_CONFIG[run.status];
             const StatusIcon = config.icon;
-            const harmonicSummary = getHarmonicSummary(run);
-            const providerSummary = getProviderSummary(run);
             const runError = getRunError(run);
+            const linkedConceptId = typeof run.queryParams === "object" && run.queryParams !== null
+              ? (run.queryParams as { conceptId?: unknown }).conceptId
+              : null;
 
             return (
-              <div key={run.id} className="space-y-3 rounded-lg border border-border bg-card px-4 py-3">
+              <button
+                key={run.id}
+                type="button"
+                onClick={() => setSelectedRunId(run.id)}
+                className={`w-full space-y-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:border-primary/40 ${
+                  selectedRunId === run.id ? "border-primary/40" : "border-border"
+                }`}
+              >
                 <div className="flex items-center gap-3">
                   <StatusIcon className={`w-4 h-4 shrink-0 ${config.color} ${run.status === "running" ? "animate-spin" : ""}`} />
                   <div className="flex-1 min-w-0">
@@ -627,16 +640,14 @@ export default function IntelligenceTab({ workspace }: Props) {
                             {getChannelLabel(workspace.settings.sourcingChannels, channelId)}
                           </span>
                         ))}
-                      {typeof run.queryParams === "object" && run.queryParams !== null && typeof (run.queryParams as { conceptId?: unknown }).conceptId === "string" && (
+                      {typeof linkedConceptId === "string" && (
                         <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] uppercase text-primary">
-                          {resolveConceptName((run.queryParams as { conceptId?: string }).conceptId as string)}
+                          {resolveConceptName(linkedConceptId)}
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {typeof run.queryParams === "object" && run.queryParams !== null
-                        ? (run.queryParams as { query?: string }).query || JSON.stringify(run.queryParams)
-                        : "No query"}
+                      {getRunQuery(run)}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
@@ -653,138 +664,10 @@ export default function IntelligenceTab({ workspace }: Props) {
                     {runError}
                   </div>
                 )}
-
-                {harmonicSummary && harmonicSummary.companies.length > 0 && (
-                  <div className="grid gap-3 border-t border-border pt-3">
-                    {harmonicSummary.companies.map((company) => (
-                      <div key={company.harmonicCompanyId} className="rounded-lg border border-border/70 bg-background px-3 py-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-medium text-foreground">{company.name}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {[company.location, company.domain, company.fundingStage].filter(Boolean).join(" | ") || "No company metadata"}
-                            </p>
-                          </div>
-                          <div className="text-right text-xs text-muted-foreground">
-                            <p>{company.headcount ? `${company.headcount} headcount` : "Headcount n/a"}</p>
-                            <p>{company.fundingTotal ? `$${company.fundingTotal.toLocaleString()} raised` : "Funding n/a"}</p>
-                          </div>
-                        </div>
-
-                        {company.tags.length > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {company.tags.slice(0, 5).map((tag) => (
-                              <span key={tag} className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="mt-3 space-y-2">
-                          {company.founders.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">No founders returned.</p>
-                          ) : (
-                            company.founders.map((founder) => {
-                              const importKey = `${company.harmonicCompanyId}:${founder.name}:${founder.linkedinUrl || "no-linkedin"}`;
-                              const alreadyImported = isFounderImported(founder, company.name);
-
-                              return (
-                                <div key={importKey} className="flex items-center justify-between gap-3">
-                                  <div className="text-xs text-muted-foreground">
-                                    <span className="font-medium text-foreground">{founder.name}</span>
-                                    {founder.title ? ` | ${founder.title}` : ""}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleImportFounder(founder, company.name)}
-                                    disabled={alreadyImported || importingKey === importKey}
-                                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                                  >
-                                    {importingKey === importKey ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                      <Upload className="h-3 w-3" />
-                                    )}
-                                    {alreadyImported ? "Imported" : "Import"}
-                                  </button>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {providerSummary && providerSummary.items.length > 0 && (
-                  <div className="grid gap-3 border-t border-border pt-3">
-                    {providerSummary.items.map((item) => {
-                      const importKey = `${providerSummary.source}:${item.id}`;
-                      const alreadyImported = item.importCandidate ? isImportCandidateImported(item.importCandidate) : false;
-
-                      return (
-                        <div key={item.id} className="rounded-lg border border-border/70 bg-background px-3 py-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-foreground">{item.title}</p>
-                              {item.subtitle && (
-                                <p className="mt-1 text-xs text-muted-foreground">{item.subtitle}</p>
-                              )}
-                            </div>
-                            {item.url && (
-                              <a
-                                href={item.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-muted-foreground hover:text-primary"
-                              >
-                                <ExternalLink className="h-4 w-4" />
-                              </a>
-                            )}
-                          </div>
-
-                          {item.snippet && (
-                            <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                              {item.snippet}
-                            </p>
-                          )}
-
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            {item.sourceChannel && (
-                              <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] uppercase text-primary">
-                                {getChannelLabel(workspace.settings.sourcingChannels, item.sourceChannel)}
-                              </span>
-                            )}
-                            {item.tags.map((tag) => (
-                              <span key={tag} className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
-                                {tag}
-                              </span>
-                            ))}
-
-                            {item.importCandidate && (
-                              <button
-                                type="button"
-                                onClick={() => void handleImportCandidate(item.importCandidate as AiFundIntelligenceImportCandidate, importKey)}
-                                disabled={alreadyImported || importingKey === importKey}
-                                className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                              >
-                                {importingKey === importKey ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Upload className="h-3 w-3" />
-                                )}
-                                {alreadyImported ? "Imported" : "Import"}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                <p className="border-t border-border pt-3 text-xs text-muted-foreground">
+                  Click to view detailed results and import candidates.
+                </p>
+              </button>
             );
           })}
         </div>
