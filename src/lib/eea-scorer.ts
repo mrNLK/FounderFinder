@@ -416,18 +416,18 @@ export function scoreCandidate(signals: string[]): EEAScore {
       matchedTier2.push(signal.label);
     }
   }
-
-  // Handle elite university requiring combination
-  const uniSignal = TIER_2_SIGNALS.find((s) => s.requiresCombination && s.label === "Elite University");
-  if (uniSignal && matchedTier2.includes("Elite University")) {
-    const nonUniTier2Count = matchedTier2.filter((s) => s !== "Elite University").length;
-    if (nonUniTier2Count === 0 && matchedTier1.length === 0) {
-      // Remove elite university if it's the only signal
-      const idx = matchedTier2.indexOf("Elite University");
-      matchedTier2.splice(idx, 1);
-    }
-  }
-
+    // Handle requiresCombination: remove signals that require another
+        // corroborating Tier 2 match if they appear alone
+            const comboSignals = TIER_2_SIGNALS.filter((s) => s.requiresCombination);
+                for (const comboSig of comboSignals) {
+                      if (!matchedTier2.includes(comboSig.label)) continue;
+                            const otherTier2Count = matchedTier2.filter((s) => s !== comboSig.label).length;
+                                  if (otherTier2Count === 0 && matchedTier1.length === 0) {
+                                          const idx = matchedTier2.indexOf(comboSig.label);
+                                                  matchedTier2.splice(idx, 1);
+                                                        }
+                                                            }
+                                                            
   // If workshop FP detected, move any conference signals that were T1 down to T2
   if (hasWorkshopFP) {
     // The conference was already excluded from T1 above.
