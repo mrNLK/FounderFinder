@@ -51,7 +51,48 @@ FounderFinder gives venture teams a single operating system for:
 - **Internal Product Execution**: use Build OS to run idea-to-deploy cycles.
 - **Event-Driven Pipeline**: use events as top-of-funnel, then score and route attendees.
 
-## 6) Shareable Product Description
+## 6) Lever-Specific Automation Guidelines
+
+### Intake Workflow
+
+- Prefer recurring Lever exports in `candidates_by_origin` schema.
+- Preserve source metadata: posting, department, stage, and import timestamp.
+- Normalize LinkedIn/GitHub URLs before import to improve dedupe quality.
+
+### Auto-Identification Rules for Strong Applicants
+
+- Auto-prioritize candidates with 2+ strong technical signals.
+- Auto-prioritize candidates with founder + technical builder evidence.
+- Auto-hold profiles with weak verifiable signals or missing public proof.
+- Apply false-positive penalty rules before final routing.
+
+### Previous Applicant Resurfacing Rules
+
+- Re-evaluate candidates after 6-12 months if new signals are present.
+- Re-open candidates who show role progression (e.g., Staff/Principal growth).
+- Re-open candidates with new launches, stronger OSS metrics, or fresh publications.
+- Do not resurface candidates with prior hard disqualifier reasons.
+
+### Suggested Routing Formula
+
+```text
+lever_signal_score = technical_signals + founder_signals + recency_bonus - false_positive_penalty
+
+score >= 80   -> Priority Outreach
+score 60-79   -> Operator Review
+score 40-59   -> Nurture / Recheck
+score < 40    -> Archive
+```
+
+### Weekly Lever Operating Loop
+
+1. Import latest Lever export.
+2. Run duplicate merge pass by email + normalized profile links.
+3. Review all Priority Outreach records.
+4. Trigger outreach and update engagement status.
+5. Re-scan prior applicants for new high-signal changes.
+
+## 7) Shareable Product Description
 
 ### Short
 
