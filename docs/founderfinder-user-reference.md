@@ -101,3 +101,28 @@ FounderFinder helps venture teams find and evaluate exceptional technical founde
 ### Long
 
 FounderFinder is a venture creation operating system. It sources high-potential technical founders from the web, scores them using an Evidence of Exceptional Ability framework, and keeps sourcing, matching, engagement, and build workflows in one workspace. Teams use it to run repeatable pipeline cycles and move ideas to shipped products with higher quality and speed.
+
+## 8) QA Swarm Runbook
+
+### GitHub (recommended)
+
+1. Open **Actions** → **QA Swarm**.
+2. Click **Run workflow** on `main`.
+3. Wait for completion of:
+   - lint
+   - test
+   - build
+   - Build OS smoke (core)
+   - Build OS smoke (full flow)
+   - Lever preview sync smoke (if Lever secrets are set)
+
+### Local (manual fallback)
+
+```bash
+npm run lint
+npm run test
+npm run build
+npm run smoke:build-os
+npm run smoke:build-os:full
+LEVER_SYNC_MODE=preview npm run sync:lever
+```
