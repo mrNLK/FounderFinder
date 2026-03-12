@@ -182,19 +182,18 @@ describe("scoreCandidate", () => {
       expect(result.matchedTier2).not.toContain("Multiple Exits");
     });
 
-    it("detects Ex-FAANG Senior+", () => {
-      const result = scoreCandidate(["Former Staff Engineer at Google"]);
+    it("detects Ex-FAANG Senior+ with another Tier 2 signal", () => {
+      const result = scoreCandidate([
+        "Former Staff Engineer at Google",
+        "Published at NeurIPS 2024",
+      ]);
       expect(result.matchedTier2).toContain("Ex-FAANG Senior+");
     });
 
     it("Ex-FAANG Senior+ requires combination (alone doesn't count)", () => {
-      // Only Ex-FAANG Senior+ (requiresCombination) → should be removed if alone
       const result = scoreCandidate(["Staff Engineer at Meta, no other signals"]);
-      // It has requiresCombination, and it's the only non-elite-uni signal...
-      // but it's still in the matched list because requiresCombination only applies to Elite University
-      // Actually looking at the code, requiresCombination check only handles "Elite University" by name
-      // So Ex-FAANG Senior+ will still count as Tier 2 signal alone → tier 3
-      expect(result.matchedTier2).toContain("Ex-FAANG Senior+");
+      expect(result.matchedTier2).not.toContain("Ex-FAANG Senior+");
+      expect(result.tier).toBeNull();
     });
   });
 

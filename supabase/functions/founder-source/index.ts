@@ -30,10 +30,6 @@ interface SourceRequestBody {
   appendQueries?: boolean;
 }
 
-interface SearchCriteria {
-  description: string;
-}
-
 interface SearchQuery {
   query: string;
   count: number;

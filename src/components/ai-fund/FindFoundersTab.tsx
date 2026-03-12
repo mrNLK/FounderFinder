@@ -8,7 +8,7 @@
  * Never fabricates LinkedIn or GitHub URLs — only surfaces URLs returned by APIs.
  */
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import {
   Search,
   Loader2,
@@ -28,9 +28,7 @@ import {
   Star,
   Target,
   Zap,
-  RefreshCw,
   Settings2,
-  Plus,
   UserPlus,
 } from "lucide-react";
 import type { AiFundWorkspace, AiFundProviderIntelligenceSummary } from "@/types/ai-fund";
@@ -348,7 +346,7 @@ export default function FindFoundersTab({ workspace }: Props) {
   };
 
   // ── REAL PIPELINE ──────────────────────────────────────────────────────
-  const runPipeline = useCallback(async () => {
+  const runPipeline = async () => {
     const { query, provider } = getActiveQuery();
     if (!query.trim()) {
       setError("Please enter a search query.");
@@ -443,7 +441,7 @@ export default function FindFoundersTab({ workspace }: Props) {
       setError(msg);
       setStage("error");
     }
-  }, [selectedQuery, customQuery, resultLimit]);
+  };
 
   // ── Import to Talent Pool ──────────────────────────────────────────────
   const importCandidate = async (candidate: CandidateResult) => {
