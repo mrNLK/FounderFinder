@@ -264,6 +264,7 @@
           <a href="#lever-automation">Lever Automation</a>
           <a href="#use-cases">Use Cases</a>
           <a href="#share-copy">Shareable Description</a>
+          <a href="#qa-swarm">QA Swarm</a>
           <a href="#faq">FAQ</a>
         </nav>
 
@@ -585,6 +586,24 @@ It combines AI-powered sourcing, evidence-based scoring, and one workspace to mo
           <pre><code>FounderFinder is an operating system for venture creation teams. It identifies high-potential technical founders using web-scale search and enrichment, ranks them with an Evidence of Exceptional Ability framework, and keeps sourcing, matching, engagement, and build workflows in one place.
 
 Teams use FounderFinder to run repeatable weekly sourcing cycles, turn raw candidates into prioritized founder pipelines, and execute new product ideas through a structured Build OS process from exploration to shipped output.</code></pre>
+        </section>
+
+        <section class="card" id="qa-swarm">
+          <span class="pill">QA Swarm</span>
+          <h3>Full validation runbook</h3>
+          <h4>GitHub (recommended)</h4>
+          <ol>
+            <li>Open Actions and run <code>QA Swarm</code> on <code>main</code>.</li>
+            <li>Confirm green for lint, test, build, and both Build OS smoke flows.</li>
+            <li>Confirm Lever preview sync smoke is green (or explicitly skipped if Lever creds are not set).</li>
+          </ol>
+          <h4 style="margin-top: 12px;">Local fallback commands</h4>
+          <pre><code>npm run lint
+npm run test
+npm run build
+npm run smoke:build-os
+npm run smoke:build-os:full
+LEVER_SYNC_MODE=preview npm run sync:lever</code></pre>
         </section>
 
         <section class="card" id="faq">

@@ -1,0 +1,121 @@
+name: QA Swarm
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: founderfinder-qa-swarm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qa-swarm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      SMOKE_SUPABASE_REFRESH_TOKEN: ${{ secrets.SMOKE_SUPABASE_REFRESH_TOKEN }}
+      SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+      SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+      LEVER_SYNC_REFRESH_TOKEN: ${{ secrets.LEVER_SYNC_REFRESH_TOKEN }}
+      LEVER_SYNC_EMAIL: ${{ secrets.LEVER_SYNC_EMAIL }}
+      LEVER_SYNC_PASSWORD: ${{ secrets.LEVER_SYNC_PASSWORD }}
+      SMOKE_HEADLESS: "true"
+      CI: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          test -n "$VERCEL_ORG_ID" || { echo "Missing VERCEL_ORG_ID"; exit 1; }
+          test -n "$VERCEL_PROJECT_ID" || { echo "Missing VERCEL_PROJECT_ID"; exit 1; }
+          test -n "$VERCEL_TOKEN" || { echo "Missing VERCEL_TOKEN"; exit 1; }
+
+          has_smoke_refresh=0
+          has_smoke_password=0
+          if [ -n "$SMOKE_SUPABASE_REFRESH_TOKEN" ]; then
+            has_smoke_refresh=1
+          fi
+          if [ -n "$SMOKE_EMAIL" ] && [ -n "$SMOKE_PASSWORD" ]; then
+            has_smoke_password=1
+          fi
+          if [ "$has_smoke_refresh" -eq 0 ] && [ "$has_smoke_password" -eq 0 ]; then
+            echo "Missing smoke auth credentials. Set SMOKE_EMAIL+SMOKE_PASSWORD or SMOKE_SUPABASE_REFRESH_TOKEN."
+            exit 1
+          fi
+
+      - name: Normalize Vercel IDs
+        run: |
+          echo "VERCEL_ORG_ID=$(printf '%s' "$VERCEL_ORG_ID" | tr -d '\r\n')" >> "$GITHUB_ENV"
+          echo "VERCEL_PROJECT_ID=$(printf '%s' "$VERCEL_PROJECT_ID" | tr -d '\r\n')" >> "$GITHUB_ENV"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull Vercel environment
+        run: npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright package
+        run: npm install --no-save playwright
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Build OS smoke (core gates)
+        run: npm run smoke:build-os
+
+      - name: Build OS smoke (full stage flow)
+        run: npm run smoke:build-os:full
+
+      - name: Resolve Lever auth fallback
+        run: |
+          if [ -z "$LEVER_SYNC_REFRESH_TOKEN" ] && [ -n "$SMOKE_SUPABASE_REFRESH_TOKEN" ]; then
+            echo "LEVER_SYNC_REFRESH_TOKEN=$SMOKE_SUPABASE_REFRESH_TOKEN" >> "$GITHUB_ENV"
+          fi
+
+      - name: Lever preview sync smoke
+        run: |
+          has_lever_refresh=0
+          has_lever_password=0
+          if [ -n "$LEVER_SYNC_REFRESH_TOKEN" ]; then
+            has_lever_refresh=1
+          fi
+          if [ -n "$LEVER_SYNC_EMAIL" ] && [ -n "$LEVER_SYNC_PASSWORD" ]; then
+            has_lever_password=1
+          fi
+          if [ "$has_lever_refresh" -eq 0 ] && [ "$has_lever_password" -eq 0 ]; then
+            echo "Skipping Lever preview sync: missing LEVER_SYNC credentials."
+            exit 0
+          fi
+          LEVER_SYNC_MODE=preview npm run sync:lever
+
+      - name: Upload smoke failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-swarm-smoke-failures
+          path: |
+            /tmp/founderfinder-build-os-smoke-failure.png
+            /tmp/founderfinder-build-os-full-smoke-failure.png
+          if-no-files-found: ignore
