@@ -84,20 +84,26 @@ async function createSession() {
   };
 
   const attempts = [];
-  if (refreshToken) {
-    attempts.push(() => fetchJson(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    }));
+  if (email && password) {
+    attempts.push({
+      label: "password",
+      run: () => fetchJson(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ email, password }),
+      }),
+    });
   }
 
-  if (email && password) {
-    attempts.push(() => fetchJson(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ email, password }),
-    }));
+  if (refreshToken) {
+    attempts.push({
+      label: "refresh_token",
+      run: () => fetchJson(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      }),
+    });
   }
 
   if (attempts.length === 0) {
@@ -107,9 +113,10 @@ async function createSession() {
   let lastError = null;
   for (const attempt of attempts) {
     try {
-      return await attempt();
+      return await attempt.run();
     } catch (error) {
       lastError = error;
+      console.warn(`Lever sync auth with ${attempt.label} failed; trying next method if available.`);
     }
   }
 

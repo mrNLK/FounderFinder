@@ -540,7 +540,7 @@ async function fetchLeverApplicants(
   const applicants: ApplicantCandidate[] = [];
   let offset = 0;
   const pageSize = Math.min(50, maxApplicants);
-  const maxPages = 20;
+  const maxPages = Math.max(20, Math.ceil(maxApplicants / Math.max(pageSize, 1)) + 5);
 
   for (let page = 0; page < maxPages && applicants.length < maxApplicants; page += 1) {
     const opportunityRows = await fetchLeverPage(apiKey, pageSize, offset);
@@ -666,7 +666,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
     const mode: LeverSyncMode = body.mode === "sync" ? "sync" : "preview";
     const source: LeverSyncSource = body.source === "manual_rows" ? "manual_rows" : "lever_api";
-    const maxApplicants = asBoundedInt(body.maxApplicants, 120, 1, 500);
+    const maxApplicants = asBoundedInt(body.maxApplicants, 120, 1, 2000);
     const includeArchived = asBoolean(body.includeArchived, false);
     const resurfacingWindowDays = asBoundedInt(body.resurfacingWindowDays, 180, 30, 730);
     const routeCounts = buildRouteCounts();
