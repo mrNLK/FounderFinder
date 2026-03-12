@@ -150,7 +150,7 @@ async function runLeverSync() {
   const session = await createSession();
   const supabaseUrl = process.env.LEVER_SYNC_SUPABASE_URL || process.env.SMOKE_SUPABASE_URL || requireEnv("VITE_SUPABASE_URL");
   const anonKey = process.env.LEVER_SYNC_SUPABASE_ANON_KEY || process.env.SMOKE_SUPABASE_ANON_KEY || requireEnv("VITE_SUPABASE_ANON_KEY");
-  const functionUrl = process.env.LEVER_SYNC_FUNCTION_URL || `${supabaseUrl}/functions/v1/aifund-lever-sync`;
+  const functionUrl = `${supabaseUrl}/functions/v1/aifund-lever-sync`;
   const mode = process.env.LEVER_SYNC_MODE === "preview" ? "preview" : "sync";
   const source = process.env.LEVER_SYNC_SOURCE === "manual_rows" ? "manual_rows" : "lever_api";
   const maxApplicants = asInt(process.env.LEVER_SYNC_MAX_APPLICANTS, 120);
