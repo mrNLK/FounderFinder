@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FounderFinder User Guide</title>
+    <meta
+      name="description"
+      content="FounderFinder user reference: value proposition, end-to-end walkthrough, features, best practices, and use-case playbooks."
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
+    <style>
+      :root {
+        --bg-0: #041028;
+        --bg-1: #0a1d44;
+        --bg-2: #11295f;
+        --panel: rgba(6, 18, 45, 0.82);
+        --panel-border: rgba(130, 172, 255, 0.22);
+        --text: #e9f1ff;
+        --muted: #9db1d8;
+        --accent: #3dd8ff;
+        --accent-2: #89ffcb;
+        --warn: #ffd677;
+        --code-bg: rgba(8, 22, 56, 0.9);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Space Grotesk", sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at 10% 10%, #1a3d8f 0, transparent 42%),
+          radial-gradient(circle at 88% 12%, #138cc4 0, transparent 35%),
+          linear-gradient(155deg, var(--bg-0), var(--bg-1) 50%, var(--bg-2));
+        min-height: 100%;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+        gap: 24px;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 16px;
+        height: calc(100vh - 32px);
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: 18px;
+        padding: 18px;
+        backdrop-filter: blur(8px);
+      }
+
+      .brand {
+        margin-bottom: 18px;
+      }
+
+      .kicker {
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 8px;
+      }
+
+      .title {
+        font-size: 26px;
+        line-height: 1.05;
+        margin: 0;
+      }
+
+      .subtitle {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .nav {
+        margin: 16px 0 18px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .nav a {
+        display: block;
+        color: var(--text);
+        text-decoration: none;
+        font-size: 14px;
+        border: 1px solid rgba(148, 185, 255, 0.2);
+        border-radius: 10px;
+        padding: 9px 10px;
+        background: rgba(12, 32, 74, 0.6);
+        transition: transform 120ms ease, border-color 120ms ease;
+      }
+
+      .nav a:hover {
+        transform: translateX(2px);
+        border-color: rgba(130, 255, 222, 0.5);
+      }
+
+      .cta {
+        display: grid;
+        gap: 8px;
+      }
+
+      .cta a {
+        color: #041429;
+        background: linear-gradient(120deg, var(--accent), var(--accent-2));
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 13px;
+        padding: 10px 12px;
+        border-radius: 10px;
+      }
+
+      .main {
+        display: grid;
+        gap: 14px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: 18px;
+        padding: 24px;
+        backdrop-filter: blur(8px);
+      }
+
+      h2 {
+        margin: 0 0 10px;
+        font-size: 28px;
+      }
+
+      h3 {
+        margin: 0 0 10px;
+        font-size: 20px;
+      }
+
+      h4 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+
+      p,
+      li {
+        color: #dbe8ff;
+        line-height: 1.6;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .pill {
+        display: inline-block;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: #06203f;
+        background: linear-gradient(120deg, var(--accent), var(--accent-2));
+        padding: 5px 8px;
+        border-radius: 999px;
+        font-weight: 700;
+      }
+
+      .stage {
+        background: rgba(10, 28, 70, 0.7);
+        border: 1px solid rgba(135, 171, 255, 0.26);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .stage .id {
+        font-family: "IBM Plex Mono", monospace;
+        color: var(--accent);
+        font-size: 12px;
+      }
+
+      pre {
+        margin: 0;
+        padding: 14px;
+        background: var(--code-bg);
+        border-radius: 12px;
+        border: 1px solid rgba(128, 165, 245, 0.24);
+        overflow: auto;
+        color: #d6ffef;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      code {
+        font-family: "IBM Plex Mono", monospace;
+        color: var(--warn);
+      }
+
+      .callout {
+        border-left: 3px solid var(--accent);
+        background: rgba(12, 32, 76, 0.82);
+        border-radius: 0 10px 10px 0;
+        padding: 10px 12px;
+      }
+
+      @media (max-width: 1080px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: static;
+          height: auto;
+        }
+
+        .grid.two,
+        .grid.three {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="kicker">FounderFinder Docs</p>
+          <h1 class="title">User Reference Guide</h1>
+          <p class="subtitle">
+            End-to-end operating playbook for sourcing, evaluating, and converting exceptional technical founders.
+          </p>
+        </div>
+
+        <nav class="nav">
+          <a href="#quickstart">Quickstart</a>
+          <a href="#value">Value Proposition</a>
+          <a href="#walkthrough">End-to-End Walkthrough</a>
+          <a href="#features">Feature Reference</a>
+          <a href="#best-practices">Best Practices</a>
+          <a href="#use-cases">Use Cases</a>
+          <a href="#share-copy">Shareable Description</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+
+        <div class="cta">
+          <a href="https://founder-finder-mu.vercel.app" target="_blank" rel="noreferrer">
+            Open FounderFinder
+          </a>
+          <a href="/build-os-docs/" target="_blank" rel="noreferrer">
+            Open Build OS Docs
+          </a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section class="card" id="quickstart">
+          <span class="pill">Quickstart</span>
+          <h2>FounderFinder in 5 minutes</h2>
+          <ol>
+            <li>Open <code>Settings</code> and confirm Exa + Parallel are configured.</li>
+            <li>Run <code>Founder Finder</code> and review Tier 1 and Tier 2 candidates.</li>
+            <li>Import top candidates to <code>Talent Pool</code>.</li>
+            <li>Create or update a venture in <code>Concepts</code> and use <code>Matching</code>.</li>
+            <li>Track outreach in <code>Engagements</code> and progress in <code>Residencies</code>/<code>Investment</code>.</li>
+          </ol>
+          <div class="callout">
+            Operator rule: score evidence first, then make outreach decisions.
+          </div>
+        </section>
+
+        <section class="card" id="value">
+          <span class="pill">Value Prop</span>
+          <h3>What FounderFinder does better than manual sourcing</h3>
+          <div class="grid two">
+            <article class="stage">
+              <h4>Faster top-of-funnel discovery</h4>
+              <p>
+                Turns broad web search into ranked founder candidates with technical signal context in one pass.
+              </p>
+            </article>
+            <article class="stage">
+              <h4>Evidence-based evaluation</h4>
+              <p>
+                Uses EEA scoring and false-positive controls so high-confidence candidates rise quickly.
+              </p>
+            </article>
+            <article class="stage">
+              <h4>Integrated execution loop</h4>
+              <p>
+                Sourcing, matching, engagement, and concept tracking stay in one workspace instead of scattered docs.
+              </p>
+            </article>
+            <article class="stage">
+              <h4>Compounding pipeline quality</h4>
+              <p>
+                Talent records and stage outcomes create reusable institutional memory for future sourcing cycles.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="card" id="walkthrough">
+          <span class="pill">Walkthrough</span>
+          <h3>End-to-end operating flow</h3>
+          <div class="grid">
+            <article class="stage">
+              <div class="id">01 | setup</div>
+              <h4>Configure environment</h4>
+              <p>
+                In <code>Settings</code>, configure Exa, Parallel, and Harmonic. Without Exa, founder search is blocked.
+              </p>
+            </article>
+            <article class="stage">
+              <div class="id">02 | source</div>
+              <h4>Run Founder Finder</h4>
+              <p>
+                Trigger search and enrichment. The pipeline runs Exa sourcing, EEA scoring, then Parallel enrichment.
+              </p>
+            </article>
+            <article class="stage">
+              <div class="id">03 | triage</div>
+              <h4>Triage by score, not intuition</h4>
+              <p>
+                Prioritize Tier 1 for immediate outreach, Tier 2 for shortlist building, Tier 3 for later revisit.
+              </p>
+            </article>
+            <article class="stage">
+              <div class="id">04 | import</div>
+              <h4>Import to Talent Pool</h4>
+              <p>
+                Import top candidates. Use batch import for Tier 1 when running weekly sourcing sprints.
+              </p>
+            </article>
+            <article class="stage">
+              <div class="id">05 | match</div>
+              <h4>Map founders to concepts</h4>
+              <p>
+                Use <code>Concepts</code> + <code>Matching</code> to link founder profiles to active venture opportunities.
+              </p>
+            </article>
+            <article class="stage">
+              <div class="id">06 | engage</div>
+              <h4>Run outreach and progression</h4>
+              <p>
+                Move conversations through <code>Engagements</code>, then track active candidates in <code>Residencies</code> and
+                <code> Investment</code>.
+              </p>
+            </article>
+            <article class="stage">
+              <div class="id">07 | build</div>
+              <h4>Launch with Build OS</h4>
+              <p>
+                For selected ideas, use <code>Build OS</code> to move from exploration to shipped product via the fixed Eli workflow.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="card" id="features">
+          <span class="pill">Features</span>
+          <h3>Workspace reference by tab</h3>
+          <div class="grid two">
+            <article class="stage">
+              <h4>Overview</h4>
+              <p class="muted">Snapshot of workspace activity and high-level operating status.</p>
+            </article>
+            <article class="stage">
+              <h4>Founder Finder</h4>
+              <p class="muted">Search + score + enrich pipeline for identifying exceptional technical founders.</p>
+            </article>
+            <article class="stage">
+              <h4>EEA Signals</h4>
+              <p class="muted">Reference library for Tier 1/Tier 2 signals and known false-positive patterns.</p>
+            </article>
+            <article class="stage">
+              <h4>Talent Pool</h4>
+              <p class="muted">Persistent candidate system of record with profile and sourcing metadata.</p>
+            </article>
+            <article class="stage">
+              <h4>Concepts</h4>
+              <p class="muted">Track venture ideas and movement through concept evaluation stages.</p>
+            </article>
+            <article class="stage">
+              <h4>Matching</h4>
+              <p class="muted">Align candidate strengths to concept requirements for founder-concept fit.</p>
+            </article>
+            <article class="stage">
+              <h4>Intelligence</h4>
+              <p class="muted">Run provider-backed intelligence research to support conviction and diligence.</p>
+            </article>
+            <article class="stage">
+              <h4>Engagements</h4>
+              <p class="muted">Track outreach state, follow-ups, and active communication with candidates.</p>
+            </article>
+            <article class="stage">
+              <h4>Residencies</h4>
+              <p class="muted">Monitor progression of in-flight founder relationships and incubation status.</p>
+            </article>
+            <article class="stage">
+              <h4>Investment</h4>
+              <p class="muted">Evaluate opportunities with structured stage-based decision support.</p>
+            </article>
+            <article class="stage">
+              <h4>Build OS</h4>
+              <p class="muted">Fixed 5-stage build process from idea to shipped/parked outcome.</p>
+            </article>
+            <article class="stage">
+              <h4>Events + DL.AI Strategy</h4>
+              <p class="muted">Operational planning for event-led and DL.AI-based sourcing channels.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="card" id="best-practices">
+          <span class="pill">Best Practices</span>
+          <h3>How teams get the most value</h3>
+          <div class="grid two">
+            <article class="stage">
+              <h4>Run a weekly sourcing cadence</h4>
+              <ul>
+                <li>One sourcing run per week with a consistent query family.</li>
+                <li>Batch import Tier 1 immediately.</li>
+                <li>Review Tier 2 in a scheduled operator pass.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>Use EEA as the decision spine</h4>
+              <ul>
+                <li>Treat EEA tier as the first-pass gate.</li>
+                <li>Use false-positive flags to avoid over-scoring.</li>
+                <li>Add manual conviction notes only after evidence review.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>Keep profile hygiene high</h4>
+              <ul>
+                <li>Prefer real LinkedIn/GitHub URLs over manual guesses.</li>
+                <li>Normalize duplicate records early.</li>
+                <li>Capture source channel on every import.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>Close the loop in Build OS</h4>
+              <ul>
+                <li>Do not advance stages until artifact gates pass.</li>
+                <li>Always record QA notes before manual polish.</li>
+                <li>End every project as <code>shipped</code> or <code>parked</code>.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="card" id="use-cases">
+          <span class="pill">Use Cases</span>
+          <h3>Examples of how teams use FounderFinder</h3>
+          <div class="grid three">
+            <article class="stage">
+              <h4>Use Case 1: Weekly partner pipeline</h4>
+              <p class="muted">
+                Partner runs Founder Finder weekly, imports Tier 1 candidates, and reviews top 10 outreach targets in one 30-minute slot.
+              </p>
+            </article>
+            <article class="stage">
+              <h4>Use Case 2: Studio concept matching</h4>
+              <p class="muted">
+                Venture operator maps new candidates to 3 active concepts, then prioritizes intros based on concept-fit depth.
+              </p>
+            </article>
+            <article class="stage">
+              <h4>Use Case 3: EIR conversion tracking</h4>
+              <p class="muted">
+                Team tracks each relationship from discovery to residency and investment review with clear handoff points.
+              </p>
+            </article>
+            <article class="stage">
+              <h4>Use Case 4: Internal product build loop</h4>
+              <p class="muted">
+                Product lead captures PRD/TDD artifacts in Build OS and drives one idea to shipped state each sprint.
+              </p>
+            </article>
+            <article class="stage">
+              <h4>Use Case 5: Event-driven sourcing</h4>
+              <p class="muted">
+                Events are run as top-of-funnel channels; qualified attendees are fed into Talent Pool and scored.
+              </p>
+            </article>
+            <article class="stage">
+              <h4>Use Case 6: Intelligence-backed conviction</h4>
+              <p class="muted">
+                Intelligence tab is used before key meetings to build concise diligence packets on candidates and markets.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="card" id="share-copy">
+          <span class="pill">Share Copy</span>
+          <h3>Description you can send to users</h3>
+          <h4>Short description</h4>
+          <pre><code>FounderFinder helps venture teams find and evaluate exceptional technical founders faster.
+It combines AI-powered sourcing, evidence-based scoring, and one workspace to move from discovery to engagement and build execution.</code></pre>
+          <h4 style="margin-top: 12px;">Long description</h4>
+          <pre><code>FounderFinder is an operating system for venture creation teams. It identifies high-potential technical founders using web-scale search and enrichment, ranks them with an Evidence of Exceptional Ability framework, and keeps sourcing, matching, engagement, and build workflows in one place.
+
+Teams use FounderFinder to run repeatable weekly sourcing cycles, turn raw candidates into prioritized founder pipelines, and execute new product ideas through a structured Build OS process from exploration to shipped output.</code></pre>
+        </section>
+
+        <section class="card" id="faq">
+          <span class="pill">FAQ</span>
+          <h3>Common questions</h3>
+          <ul>
+            <li><strong>Do I need all integrations configured?</strong> Exa is required for founder search; Parallel and Harmonic add depth.</li>
+            <li><strong>How often should we run sourcing?</strong> Weekly by default; high-volume teams can run two cycles per week.</li>
+            <li><strong>What should trigger outreach?</strong> Tier 1 always; Tier 2 when concept fit is clear or conviction notes are strong.</li>
+            <li><strong>Can Build OS run without a concept record?</strong> Yes, concept linking is optional.</li>
+            <li><strong>What is the strongest operator habit?</strong> Keep artifact quality high and close every loop with explicit stage outcomes.</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
