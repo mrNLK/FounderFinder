@@ -85,6 +85,8 @@ jobs:
         run: |
           echo "VERCEL_ORG_ID=$(printf '%s' "$VERCEL_ORG_ID" | tr -d '\r\n')" >> "$GITHUB_ENV"
           echo "VERCEL_PROJECT_ID=$(printf '%s' "$VERCEL_PROJECT_ID" | tr -d '\r\n')" >> "$GITHUB_ENV"
+          echo "LEVER_SYNC_INTERNAL_KEY=$(printf '%s' "$LEVER_SYNC_INTERNAL_KEY" | tr -d '\r\n')" >> "$GITHUB_ENV"
+          echo "LEVER_SYNC_USER_ID=$(printf '%s' "$LEVER_SYNC_USER_ID" | tr -d '\r\n')" >> "$GITHUB_ENV"
 
       - name: Setup Node
         uses: actions/setup-node@v4
