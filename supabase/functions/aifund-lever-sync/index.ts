@@ -667,42 +667,53 @@ async function createRunRow(
   resurfacingWindowDays: number,
 ): Promise<string> {
   const initialStatus: LeverSyncStatus = mode === "preview" ? "preview" : "preview";
-  const baseInsert = {
+  const insertPayload: Record<string, unknown> = {
     user_id: userId,
     status: initialStatus,
     mode,
     source,
     max_applicants: maxApplicants,
+    include_archived: includeArchived,
+    resurfacing_window_days: resurfacingWindowDays,
     summary: {},
   };
 
-  const insertWithExtendedFields = {
-    ...baseInsert,
-    include_archived: includeArchived,
-    resurfacing_window_days: resurfacingWindowDays,
-  };
+  let payload = { ...insertPayload };
+  let data: unknown = null;
+  let error: { code?: string | null; message: string } | null = null;
 
-  let { data, error } = await serviceClient
-    .from("aifund_lever_sync_runs")
-    .insert(insertWithExtendedFields)
-    .select("id")
-    .single();
-
-  const isLegacyColumnError = Boolean(
-    error &&
-      error.code === "PGRST204" &&
-      (error.message.includes("include_archived") || error.message.includes("resurfacing_window_days")),
-  );
-
-  if (isLegacyColumnError) {
-    console.warn("aifund_lever_sync_runs missing extended columns; retrying with legacy payload.");
-    const legacyInsertResult = await serviceClient
+  while (true) {
+    const insertResult = await serviceClient
       .from("aifund_lever_sync_runs")
-      .insert(baseInsert)
+      .insert(payload)
       .select("id")
       .single();
-    data = legacyInsertResult.data;
-    error = legacyInsertResult.error;
+
+    data = insertResult.data;
+    error = insertResult.error
+      ? {
+        code: insertResult.error.code,
+        message: insertResult.error.message,
+      }
+      : null;
+
+    if (!error) {
+      break;
+    }
+
+    const missingColumnMatch = error.code === "PGRST204"
+      ? error.message.match(/Could not find the '([^']+)' column/)
+      : null;
+    const missingColumn = missingColumnMatch ? missingColumnMatch[1] : null;
+
+    if (!missingColumn || !(missingColumn in payload)) {
+      break;
+    }
+
+    console.warn(`aifund_lever_sync_runs missing column '${missingColumn}'; retrying without it.`);
+    const nextPayload = { ...payload };
+    delete nextPayload[missingColumn];
+    payload = nextPayload;
   }
 
   if (error || !data) {
