@@ -37,6 +37,8 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      LEVER_SYNC_INTERNAL_KEY: ${{ secrets.LEVER_SYNC_INTERNAL_KEY }}
+      LEVER_SYNC_USER_ID: ${{ secrets.LEVER_SYNC_USER_ID }}
       LEVER_SYNC_REFRESH_TOKEN: ${{ secrets.LEVER_SYNC_REFRESH_TOKEN || secrets.SMOKE_SUPABASE_REFRESH_TOKEN }}
       LEVER_SYNC_EMAIL: ${{ secrets.LEVER_SYNC_EMAIL || secrets.SMOKE_EMAIL }}
       LEVER_SYNC_PASSWORD: ${{ secrets.LEVER_SYNC_PASSWORD || secrets.SMOKE_PASSWORD }}
@@ -60,6 +62,11 @@ jobs:
 
           has_refresh=0
           has_password=0
+          has_internal=0
+
+          if [ -n "$LEVER_SYNC_INTERNAL_KEY" ]; then
+            has_internal=1
+          fi
 
           if [ -n "$LEVER_SYNC_REFRESH_TOKEN" ]; then
             has_refresh=1
@@ -69,8 +76,8 @@ jobs:
             has_password=1
           fi
 
-          if [ "$has_refresh" -eq 0 ] && [ "$has_password" -eq 0 ]; then
-            echo "Missing auth credentials. Set LEVER_SYNC_EMAIL+LEVER_SYNC_PASSWORD or LEVER_SYNC_REFRESH_TOKEN."
+          if [ "$has_internal" -eq 0 ] && [ "$has_refresh" -eq 0 ] && [ "$has_password" -eq 0 ]; then
+            echo "Missing auth credentials. Set LEVER_SYNC_INTERNAL_KEY or LEVER_SYNC_EMAIL+LEVER_SYNC_PASSWORD or LEVER_SYNC_REFRESH_TOKEN."
             exit 1
           fi
 
