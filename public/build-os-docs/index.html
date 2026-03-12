@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Build OS Docs</title>
+    <meta
+      name="description"
+      content="Build OS documentation and how-to guide for FounderFinder."
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
+    <style>
+      :root {
+        --bg-0: #041028;
+        --bg-1: #0a1d44;
+        --bg-2: #11295f;
+        --panel: rgba(6, 18, 45, 0.82);
+        --panel-border: rgba(130, 172, 255, 0.22);
+        --text: #e9f1ff;
+        --muted: #9db1d8;
+        --accent: #3dd8ff;
+        --accent-2: #89ffcb;
+        --warn: #ffd677;
+        --code-bg: rgba(8, 22, 56, 0.9);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Space Grotesk", sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at 10% 10%, #1a3d8f 0, transparent 42%),
+          radial-gradient(circle at 88% 12%, #138cc4 0, transparent 35%),
+          linear-gradient(155deg, var(--bg-0), var(--bg-1) 50%, var(--bg-2));
+        min-height: 100%;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+        gap: 24px;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 16px;
+        height: calc(100vh - 32px);
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: 18px;
+        padding: 18px;
+        backdrop-filter: blur(8px);
+      }
+
+      .brand {
+        margin-bottom: 18px;
+      }
+
+      .kicker {
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 8px;
+      }
+
+      .title {
+        font-size: 26px;
+        line-height: 1.05;
+        margin: 0;
+      }
+
+      .subtitle {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .nav {
+        margin: 16px 0 18px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .nav a {
+        display: block;
+        color: var(--text);
+        text-decoration: none;
+        font-size: 14px;
+        border: 1px solid rgba(148, 185, 255, 0.2);
+        border-radius: 10px;
+        padding: 9px 10px;
+        background: rgba(12, 32, 74, 0.6);
+        transition: transform 120ms ease, border-color 120ms ease;
+      }
+
+      .nav a:hover {
+        transform: translateX(2px);
+        border-color: rgba(130, 255, 222, 0.5);
+      }
+
+      .cta {
+        display: grid;
+        gap: 8px;
+      }
+
+      .cta a {
+        color: #041429;
+        background: linear-gradient(120deg, var(--accent), var(--accent-2));
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 13px;
+        padding: 10px 12px;
+        border-radius: 10px;
+      }
+
+      .main {
+        display: grid;
+        gap: 14px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: 18px;
+        padding: 24px;
+        backdrop-filter: blur(8px);
+      }
+
+      h2 {
+        margin: 0 0 10px;
+        font-size: 28px;
+      }
+
+      h3 {
+        margin: 0 0 10px;
+        font-size: 20px;
+      }
+
+      p,
+      li {
+        color: #dbe8ff;
+        line-height: 1.6;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .pill {
+        display: inline-block;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: #06203f;
+        background: linear-gradient(120deg, var(--accent), var(--accent-2));
+        padding: 5px 8px;
+        border-radius: 999px;
+        font-weight: 700;
+      }
+
+      .stage {
+        background: rgba(10, 28, 70, 0.7);
+        border: 1px solid rgba(135, 171, 255, 0.26);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .stage h4 {
+        margin: 0 0 6px;
+        font-size: 16px;
+      }
+
+      .stage .id {
+        font-family: "IBM Plex Mono", monospace;
+        color: var(--accent);
+        font-size: 12px;
+      }
+
+      pre {
+        margin: 0;
+        padding: 14px;
+        background: var(--code-bg);
+        border-radius: 12px;
+        border: 1px solid rgba(128, 165, 245, 0.24);
+        overflow: auto;
+        color: #d6ffef;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      code {
+        font-family: "IBM Plex Mono", monospace;
+        color: var(--warn);
+      }
+
+      .callout {
+        border-left: 3px solid var(--accent);
+        background: rgba(12, 32, 76, 0.82);
+        border-radius: 0 10px 10px 0;
+        padding: 10px 12px;
+      }
+
+      @media (max-width: 1080px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: static;
+          height: auto;
+        }
+
+        .grid.two {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="kicker">FounderFinder Docs</p>
+          <h1 class="title">Build OS</h1>
+          <p class="subtitle">
+            Canonical Eli workflow for moving from idea to shipped product.
+          </p>
+        </div>
+
+        <nav class="nav">
+          <a href="#quickstart">Quickstart</a>
+          <a href="#workflow">Workflow Stages</a>
+          <a href="#artifacts">Artifacts + Gates</a>
+          <a href="#prompts">Prompt Packets</a>
+          <a href="#qa">QA Swarm</a>
+          <a href="#howto">How-To Recipes</a>
+          <a href="#ops">Ops + Deploy</a>
+          <a href="#troubleshooting">Troubleshooting</a>
+        </nav>
+
+        <div class="cta">
+          <a href="https://founder-finder-mu.vercel.app" target="_blank" rel="noreferrer">
+            Open FounderFinder
+          </a>
+          <a href="/build-os-docs/#howto">Jump to How-To</a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section class="card" id="quickstart">
+          <span class="pill">Quickstart</span>
+          <h2>Build OS in 3 minutes</h2>
+          <ol>
+            <li>Open the <code>Build OS</code> tab.</li>
+            <li>Create a project with title, problem statement, and target user.</li>
+            <li>Fill each stage artifact and advance only when gates pass.</li>
+          </ol>
+          <div class="callout">
+            Stage progression is strict: only the current stage can be advanced.
+          </div>
+        </section>
+
+        <section class="card" id="workflow">
+          <span class="pill">Workflow</span>
+          <h3>5-stage canonical Eli loop</h3>
+          <div class="grid two">
+            <article class="stage">
+              <div class="id">explore</div>
+              <h4>Explore</h4>
+              <p>Experiment with APIs/tools and validate there is enough signal to spec.</p>
+            </article>
+            <article class="stage">
+              <div class="id">prd_research</div>
+              <h4>PRD + Research</h4>
+              <p>Define product requirements and market signals before engineering handoff.</p>
+            </article>
+            <article class="stage">
+              <div class="id">tdd_review</div>
+              <h4>TDD Review</h4>
+              <p>Pressure-test technical design until open engineering questions are closed.</p>
+            </article>
+            <article class="stage">
+              <div class="id">build_loop</div>
+              <h4>Build Loop</h4>
+              <p>Implement, deploy, and run closed-loop QA until the spec is met.</p>
+            </article>
+            <article class="stage">
+              <div class="id">manual_polish</div>
+              <h4>Manual Polish</h4>
+              <p>Final pass for polish; finish with status <code>shipped</code> or <code>parked</code>.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="card" id="artifacts">
+          <span class="pill">Artifacts + Gates</span>
+          <h3>Required docs and gate logic</h3>
+          <div class="grid">
+            <div class="stage">
+              <h4>Explore</h4>
+              <p class="muted">Required: <code>experiment_log</code></p>
+              <p>Gate: experiment log not empty and project problem statement is present.</p>
+            </div>
+            <div class="stage">
+              <h4>PRD + Research</h4>
+              <p class="muted">Required: <code>prd</code>, <code>market_signals</code></p>
+              <p>Gate: both docs non-empty and research checklist item marked complete.</p>
+            </div>
+            <div class="stage">
+              <h4>TDD Review</h4>
+              <p class="muted">Required: <code>tdd</code>, <code>engineering_questions</code></p>
+              <p>Gate: TDD non-empty and open engineering questions resolved checkbox checked.</p>
+            </div>
+            <div class="stage">
+              <h4>Build Loop</h4>
+              <p class="muted">Required: <code>implementation_notes</code>, <code>qa_notes</code></p>
+              <p>Gate: both docs non-empty, deploy URL present, and <code>spec_passes_qa</code> checked.</p>
+            </div>
+            <div class="stage">
+              <h4>Manual Polish</h4>
+              <p class="muted">Required: <code>manual_test_notes</code>, <code>polish_backlog</code></p>
+              <p>Gate: manual test notes non-empty and status is <code>shipped</code> or <code>parked</code>.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="prompts">
+          <span class="pill">Prompt Packets</span>
+          <h3>Generated from live drafts</h3>
+          <p>
+            Prompt packets are generated from the current project fields plus artifact drafts.
+            They are not stored independently.
+          </p>
+          <pre><code># Example Build Loop packet header
+Implement the current TDD using railway and design skills.
+Deploy to Railway and use chrome skill to QA.
+Closed loop test until spec is complete and tested.
+
+Project: ...
+Problem statement: ...
+Deploy URL: ...
+</code></pre>
+        </section>
+
+        <section class="card" id="qa">
+          <span class="pill">QA Swarm</span>
+          <h3>Automated checks</h3>
+          <pre><code>npm run lint
+npm run build
+npm run test
+SMOKE_SUPABASE_REFRESH_TOKEN=... npm run smoke:build-os
+SMOKE_SUPABASE_REFRESH_TOKEN=... npm run smoke:build-os:full
+gh run list --workflow "Deploy And Smoke" --limit 5</code></pre>
+          <p>
+            Full report: <code>docs/qa-swarm-build-os-2026-03-11.md</code>
+          </p>
+        </section>
+
+        <section class="card" id="howto">
+          <span class="pill">How-To</span>
+          <h3>Operational recipes</h3>
+          <div class="grid two">
+            <article class="stage">
+              <h4>How to start a new idea</h4>
+              <ol>
+                <li>Create project.</li>
+                <li>Fill Explore artifact.</li>
+                <li>Advance stage.</li>
+              </ol>
+            </article>
+            <article class="stage">
+              <h4>How to close a build cycle</h4>
+              <ol>
+                <li>Complete Build Loop notes and deploy URL.</li>
+                <li>Run QA and check <code>spec_passes_qa</code>.</li>
+                <li>Advance to Manual Polish.</li>
+              </ol>
+            </article>
+            <article class="stage">
+              <h4>How to finish a project</h4>
+              <ol>
+                <li>Complete manual notes.</li>
+                <li>Set status to <code>shipped</code> or <code>parked</code>.</li>
+                <li>Click <code>Finish Project</code>.</li>
+              </ol>
+            </article>
+            <article class="stage">
+              <h4>How to copy the exact AI packet</h4>
+              <ol>
+                <li>Select current stage.</li>
+                <li>Review Prompt Packet panel.</li>
+                <li>Click <code>Copy</code>.</li>
+              </ol>
+            </article>
+          </div>
+        </section>
+
+        <section class="card" id="ops">
+          <span class="pill">Ops + Deploy</span>
+          <h3>Production release commands</h3>
+          <pre><code>supabase db push
+supabase functions deploy aifund-build-project-upsert --no-verify-jwt
+supabase functions deploy aifund-build-artifact-save --no-verify-jwt
+supabase functions deploy aifund-build-stage-transition --no-verify-jwt
+npx vercel deploy --prod --yes</code></pre>
+        </section>
+
+        <section class="card" id="troubleshooting">
+          <span class="pill">Troubleshooting</span>
+          <h3>Common failures and fixes</h3>
+          <ul>
+            <li><code>stage_gate_failed</code>: required artifact/checklist/status is missing.</li>
+            <li><code>Only the current stage can be updated</code>: switch to current stage rail node.</li>
+            <li><code>Refresh token is not valid</code>: rotate <code>SMOKE_SUPABASE_REFRESH_TOKEN</code>.</li>
+            <li>Function auth errors: deploy Build OS functions with <code>--no-verify-jwt</code>.</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

@@ -367,6 +367,14 @@ export default function BuildOsTab({ workspace }: Props) {
           <p className="mt-2 text-sm text-muted-foreground">
             One canonical Eli workflow for turning raw ideas into shipped products.
           </p>
+          <a
+            href="/build-os-docs/"
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary"
+          >
+            Open Docs
+          </a>
         </section>
 
         <section className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
