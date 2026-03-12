@@ -149,8 +149,8 @@ async function resolveSyncContext(
   request: Request,
   body: RequestBody,
 ): Promise<{ userId: string; serviceClient: SupabaseClient }> {
-  const requestInternalKey = request.headers.get("x-internal-sync-key");
-  const expectedInternalKey = getOptionalEnv("AIFUND_LEVER_SYNC_INTERNAL_KEY");
+  const requestInternalKey = request.headers.get("x-internal-sync-key")?.trim();
+  const expectedInternalKey = getOptionalEnv("AIFUND_LEVER_SYNC_INTERNAL_KEY")?.trim();
 
   if (expectedInternalKey && requestInternalKey && requestInternalKey === expectedInternalKey) {
     const serviceClient = createClient(getRequiredEnv("SUPABASE_URL"), getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
