@@ -686,6 +686,47 @@ async function testHuggingFaceIntegration(
   };
 }
 
+async function testLeverIntegration(
+  settingsRow: ReturnType<typeof buildEphemeralSettingsRow>,
+): Promise<IntegrationTestResult> {
+  const apiKey = getProviderApiKey(settingsRow, "lever");
+  if (!apiKey) {
+    return {
+      provider: "lever",
+      ok: false,
+      checkedAt: new Date().toISOString(),
+      message: "Missing Lever API key",
+      metadata: {
+        source: getProviderSource(settingsRow, "lever"),
+      },
+    };
+  }
+
+  const basicToken = btoa(`${apiKey}:`);
+  const response = await fetch("https://api.lever.co/v1/postings?limit=1", {
+    headers: {
+      "Authorization": `Basic ${basicToken}`,
+      "Accept": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Lever test failed: ${response.status} ${await response.text()}`);
+  }
+
+  const payload = await response.json() as { data?: unknown[] };
+  return {
+    provider: "lever",
+    ok: true,
+    checkedAt: new Date().toISOString(),
+    message: "Lever responded successfully",
+    metadata: {
+      source: getProviderSource(settingsRow, "lever"),
+      postingCount: Array.isArray(payload.data) ? payload.data.length : 0,
+    },
+  };
+}
+
 async function runIntegrationTest(
   provider: ProviderKey,
   settingsRow: ReturnType<typeof buildEphemeralSettingsRow>,
@@ -703,6 +744,8 @@ async function runIntegrationTest(
       return await testAnthropicIntegration(settingsRow);
     case "huggingface":
       return await testHuggingFaceIntegration(settingsRow);
+    case "lever":
+      return await testLeverIntegration(settingsRow);
   }
 }
 

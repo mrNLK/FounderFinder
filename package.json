@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "smoke:build-os": "node scripts/smoke-build-os.mjs",
     "smoke:build-os:full": "node scripts/smoke-build-os-full.mjs",
+    "sync:lever": "node scripts/lever-sync.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
