@@ -108,7 +108,14 @@ jobs:
             echo "Skipping Lever preview sync: missing LEVER_SYNC credentials."
             exit 0
           fi
+          set +e
           LEVER_SYNC_MODE=preview npm run sync:lever
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "Lever preview sync failed (non-blocking). Check auth token freshness and Lever integration settings."
+            exit 0
+          fi
 
       - name: Upload smoke failure screenshots
         if: failure()
