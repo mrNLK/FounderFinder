@@ -132,7 +132,6 @@ function scoreBreakdown(eeaScore: CandidateResult["eeaScore"]): string {
 export default function FounderFinderTab({ workspace }: Props) {
   const [step, setStep] = useState<FounderPipelineStep>("idle");
   const [candidates, setCandidates] = useState<CandidateResult[]>([]);
-  const [taskGroupId, setTaskGroupId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importingKey, setImportingKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -188,7 +187,6 @@ export default function FounderFinderTab({ workspace }: Props) {
   const runPipeline = useCallback(async () => {
     setError(null);
     setCandidates([]);
-    setTaskGroupId(null);
     setOutreachHooks({});
     setExpandedCards(new Set());
     setEnrichmentFailed(false);
@@ -245,7 +243,6 @@ export default function FounderFinderTab({ workspace }: Props) {
         }));
 
         const enrichResult = await startFounderEnrich(enrichInput);
-        setTaskGroupId(enrichResult.taskGroupId);
 
                   pollCountRef.current = 0;
         // Poll for enrichment completion
@@ -396,7 +393,7 @@ export default function FounderFinderTab({ workspace }: Props) {
     }
   };
 
-  const handleBatchImportTier1 = useCallback(async () => {
+  const handleBatchImportTier1 = async () => {
     const tier1 = candidates.filter((c) => c.eeaScore.tier === 1 && !isImported(c));
     if (tier1.length === 0 || batchImporting) return;
 
@@ -414,7 +411,7 @@ export default function FounderFinderTab({ workspace }: Props) {
 
     setBatchImporting(false);
     setBatchProgress(null);
-  }, [candidates, batchImporting, workspace]);
+  };
 
   const isImported = (candidate: CandidateResult): boolean => {
     const candidateLinkedIn = normalizeComparableUrl(candidate.linkedinUrl);

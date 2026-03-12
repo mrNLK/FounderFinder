@@ -85,11 +85,12 @@ const CATEGORY_COLORS: Record<SignalCategory, string> = {
   founder: "bg-orange-50 text-orange-700 border-orange-200",
 };
 
-export default function EEASignalsTab({ workspace: _workspace }: Props) {
+export default function EEASignalsTab({ workspace }: Props) {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("overview");
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["tier1", "tier2"]));
+  void workspace;
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);

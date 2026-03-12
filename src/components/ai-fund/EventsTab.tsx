@@ -76,12 +76,13 @@ const FOLLOWUP_CONFIG = {
 
 type SubView = "dashboard" | "run_of_show" | "selection" | "followup" | "metrics";
 
-export default function EventsTab({ workspace: _workspace }: Props) {
+export default function EventsTab({ workspace }: Props) {
   const [events, setEvents] = useState<LunchEvent[]>([]);
   const [activeView, setActiveView] = useState<SubView>("dashboard");
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEvent, setNewEvent] = useState(EMPTY_EVENT);
   const [speakerInput, setSpeakerInput] = useState("");
+  void workspace;
 
   const handleAddEvent = () => {
     if (!newEvent.date || !newEvent.title) return;

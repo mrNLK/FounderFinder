@@ -14,11 +14,8 @@ import {
   Users,
   Zap,
   Clock,
-  CheckCircle2,
   Database,
   Filter,
-  BarChart3,
-  MessageSquare,
   AlertTriangle,
 } from "lucide-react";
 import type { AiFundWorkspace } from "@/types/ai-fund";
@@ -29,8 +26,9 @@ interface Props {
 
 type SubView = "opportunity" | "pipeline" | "execution";
 
-export default function StrategyTab({ workspace: _workspace }: Props) {
+export default function StrategyTab({ workspace }: Props) {
   const [activeView, setActiveView] = useState<SubView>("opportunity");
+  void workspace;
 
   const VIEW_TABS: { id: SubView; label: string; icon: React.ElementType }[] = [
     { id: "opportunity", label: "The Opportunity", icon: Target },
