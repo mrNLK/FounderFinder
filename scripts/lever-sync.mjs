@@ -154,7 +154,8 @@ function asBool(value, fallback = false) {
 async function runLeverSync() {
   bootstrapEnv();
 
-  const session = await createSession();
+  const internalKey = process.env.LEVER_SYNC_INTERNAL_KEY;
+  const internalUserId = process.env.LEVER_SYNC_USER_ID;
   const supabaseUrl = process.env.LEVER_SYNC_SUPABASE_URL || process.env.SMOKE_SUPABASE_URL || requireEnv("VITE_SUPABASE_URL");
   const anonKey = process.env.LEVER_SYNC_SUPABASE_ANON_KEY || process.env.SMOKE_SUPABASE_ANON_KEY || requireEnv("VITE_SUPABASE_ANON_KEY");
   const functionUrl = `${supabaseUrl}/functions/v1/aifund-lever-sync`;
@@ -170,15 +171,24 @@ async function runLeverSync() {
     maxApplicants,
     includeArchived,
     resurfacingWindowDays,
+    ...(internalUserId ? { userId: internalUserId } : {}),
   };
+
+  const headers = {
+    apikey: anonKey,
+    "Content-Type": "application/json",
+  };
+
+  if (internalKey) {
+    headers["x-internal-sync-key"] = internalKey;
+  } else {
+    const session = await createSession();
+    headers.Authorization = `Bearer ${session.access_token}`;
+  }
 
   const result = await fetchJson(functionUrl, {
     method: "POST",
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${session.access_token}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 

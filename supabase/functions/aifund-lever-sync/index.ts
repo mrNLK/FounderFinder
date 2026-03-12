@@ -1,5 +1,6 @@
-import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { authenticateAiFundUser, AuthGuardError } from "../_shared/auth-guard.ts";
+import { assertAppMembership, FOUNDER_FINDER_APP_SLUG } from "../_shared/app-membership.ts";
 import { getProviderApiKey, getUserSettingsRow } from "../_shared/aifund-settings.ts";
 import { asRecord, asString, corsHeaders, errorJson, json } from "../_shared/http.ts";
 
@@ -10,6 +11,7 @@ type LeverRoute = "priority_outreach" | "operator_review" | "nurture_recheck" | 
 type ProcessStage = "identified" | "researched" | "contacted" | "archived" | "accepted" | "offered" | "residency" | "graduated";
 
 interface RequestBody {
+  userId?: string;
   mode?: LeverSyncMode;
   source?: LeverSyncSource;
   maxApplicants?: number;
@@ -95,6 +97,75 @@ const NON_TECH_PENALTY_PATTERNS = [
   /\b(recruiter|talent partner|hr|human resources)\b/i,
   /\b(office manager|executive assistant)\b/i,
 ];
+
+function getRequiredEnv(name: string): string {
+  const value = Deno.env.get(name);
+  if (!value) {
+    throw new Error(`Missing ${name}`);
+  }
+  return value;
+}
+
+function getOptionalEnv(name: string): string | null {
+  const value = Deno.env.get(name);
+  return value ? value : null;
+}
+
+async function resolveInternalDefaultUserId(serviceClient: SupabaseClient): Promise<string> {
+  const { data, error } = await serviceClient
+    .from("app_memberships")
+    .select("user_id")
+    .eq("app_slug", FOUNDER_FINDER_APP_SLUG)
+    .eq("status", "active")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to resolve internal default user:", error);
+    throw new Error("internal_user_lookup_failed");
+  }
+
+  const userId = asString(asRecord(data).user_id);
+  if (!userId) {
+    throw new AuthGuardError("No active FounderFinder member found", "not_authorized", 403);
+  }
+
+  return userId;
+}
+
+async function assertFounderFinderMembership(serviceClient: SupabaseClient, userId: string): Promise<void> {
+  try {
+    await assertAppMembership(serviceClient, userId, FOUNDER_FINDER_APP_SLUG);
+  } catch (error) {
+    if (error instanceof Error && error.message === "membership_check_failed") {
+      throw new AuthGuardError("Access check failed", "membership_check_failed", 500);
+    }
+    throw new AuthGuardError("Access denied", "not_authorized", 403);
+  }
+}
+
+async function resolveSyncContext(
+  request: Request,
+  body: RequestBody,
+): Promise<{ userId: string; serviceClient: SupabaseClient }> {
+  const requestInternalKey = request.headers.get("x-internal-sync-key");
+  const expectedInternalKey = getOptionalEnv("AIFUND_LEVER_SYNC_INTERNAL_KEY");
+
+  if (expectedInternalKey && requestInternalKey && requestInternalKey === expectedInternalKey) {
+    const serviceClient = createClient(getRequiredEnv("SUPABASE_URL"), getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
+    const configuredUserId = asString(body.userId) || getOptionalEnv("AIFUND_LEVER_SYNC_USER_ID");
+    const userId = configuredUserId || await resolveInternalDefaultUserId(serviceClient);
+    await assertFounderFinderMembership(serviceClient, userId);
+    return { userId, serviceClient };
+  }
+
+  const auth = await authenticateAiFundUser(request);
+  return {
+    userId: auth.userId,
+    serviceClient: auth.serviceClient,
+  };
+}
 
 function asBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
@@ -659,10 +730,12 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   let runId: string | null = null;
+  let runContext: { userId: string; serviceClient: SupabaseClient } | null = null;
 
   try {
-    const { userId, serviceClient } = await authenticateAiFundUser(request);
     const body = await request.json().catch(() => ({})) as RequestBody;
+    const { userId, serviceClient } = await resolveSyncContext(request, body);
+    runContext = { userId, serviceClient };
 
     const mode: LeverSyncMode = body.mode === "sync" ? "sync" : "preview";
     const source: LeverSyncSource = body.source === "manual_rows" ? "manual_rows" : "lever_api";
@@ -847,10 +920,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
     const message = error instanceof Error ? error.message : "Unknown lever sync error";
 
-    if (runId) {
+    if (runId && runContext) {
       try {
-        const auth = await authenticateAiFundUser(request);
-        await updateRunRow(auth.serviceClient, runId, "failed", {
+        await updateRunRow(runContext.serviceClient, runId, "failed", {
           scannedApplicants: 0,
           createdPeople: 0,
           updatedPeople: 0,
@@ -859,7 +931,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
           sampleReasons: [],
           errorMessage: message,
         });
-        await logLeverActivity(auth.serviceClient, auth.userId, runId, "sync_failed", {
+        await logLeverActivity(runContext.serviceClient, runContext.userId, runId, "sync_failed", {
           errorMessage: message,
         });
       } catch {
