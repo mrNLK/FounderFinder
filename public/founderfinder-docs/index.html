@@ -261,6 +261,7 @@
           <a href="#walkthrough">End-to-End Walkthrough</a>
           <a href="#features">Feature Reference</a>
           <a href="#best-practices">Best Practices</a>
+          <a href="#lever-automation">Lever Automation</a>
           <a href="#use-cases">Use Cases</a>
           <a href="#share-copy">Shareable Description</a>
           <a href="#faq">FAQ</a>
@@ -472,6 +473,63 @@
               </ul>
             </article>
           </div>
+        </section>
+
+        <section class="card" id="lever-automation">
+          <span class="pill">Lever Automation</span>
+          <h3>Guidelines to auto-identify strong new + previous applicants</h3>
+          <p>
+            Use Lever exports as a repeatable intake feed, then route records into FounderFinder for scoring, dedupe, and follow-up.
+          </p>
+          <div class="grid two">
+            <article class="stage">
+              <h4>1) Intake and normalization</h4>
+              <ul>
+                <li>Export Lever <code>candidates_by_origin</code> weekly (or daily for high volume).</li>
+                <li>Keep core fields: name, email, role, company, location, stage, source, links, resume text.</li>
+                <li>Normalize LinkedIn/GitHub URLs before import to reduce duplicate profiles.</li>
+                <li>Tag each record with import date and job posting for cohort analysis.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>2) Automated quality filters</h4>
+              <ul>
+                <li>Auto-pass if candidate has 2+ strong technical signals (publications, OSS traction, elite engineering roles).</li>
+                <li>Auto-pass if profile clearly shows founder/operator + technical build evidence.</li>
+                <li>Auto-hold if profile is incomplete or has no verifiable technical indicators.</li>
+                <li>Auto-reject low-fit roles when candidate objective does not match venture-stage needs.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>3) Previous applicant resurfacing rules</h4>
+              <ul>
+                <li>Re-open previously rejected applicants after 6-12 months if new technical signals appear.</li>
+                <li>Prioritize prior applicants with role progression (e.g., Sr Eng → Staff/Principal).</li>
+                <li>Prioritize prior applicants with new founder activity, launches, or notable OSS growth.</li>
+                <li>Suppress resurfacing if prior rejection reason was hard disqualifier (not skill-gap based).</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>4) Scoring and routing formula</h4>
+              <pre><code>lever_signal_score = technical_signals + founder_signals + recency_bonus - false_positive_penalty
+
+if score >= 80: route = "Priority Outreach"
+if score 60-79: route = "Operator Review"
+if score 40-59: route = "Nurture / Recheck"
+if score < 40: route = "Archive"</code></pre>
+            </article>
+          </div>
+          <div class="callout" style="margin-top: 10px;">
+            Current best path in FounderFinder: use ATS import preview, keep <code>isPreferredLeverExport</code> true where possible, then run EEA-style review for final decisioning.
+          </div>
+          <h4 style="margin-top: 12px;">Recommended weekly operating loop</h4>
+          <ol>
+            <li>Import new Lever export and sync candidates.</li>
+            <li>Run duplicate merge pass by email + normalized LinkedIn/GitHub.</li>
+            <li>Review all <code>Priority Outreach</code> and top <code>Operator Review</code> records.</li>
+            <li>Trigger outreach sequences and update engagement states.</li>
+            <li>Resurface previous applicants that crossed new signal thresholds.</li>
+          </ol>
         </section>
 
         <section class="card" id="use-cases">
