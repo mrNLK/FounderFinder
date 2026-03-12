@@ -19,6 +19,9 @@ import {
   Zap,
   Settings,
   Search,
+  BookOpen,
+  Calendar,
+  Layers,
 } from "lucide-react";
 
 // Tab components
@@ -33,6 +36,9 @@ import IntelligenceTab from "@/components/ai-fund/IntelligenceTab";
 import AiFundSettingsTab from "@/components/ai-fund/SettingsTab";
 import FounderFinderTab from "@/components/ai-fund/FounderFinderTab";
 import BuildOsTab from "@/components/ai-fund/BuildOsTab";
+import EEASignalsTab from "@/components/ai-fund/EEASignalsTab";
+import EventsTab from "@/components/ai-fund/EventsTab";
+import StrategyTab from "@/components/ai-fund/StrategyTab";
 
 type AiFundTab =
   | "overview"
@@ -45,6 +51,9 @@ type AiFundTab =
   | "intelligence"
   | "build_os"
   | "founderfinder"
+  | "eea_signals"
+  | "events"
+  | "strategy"
   | "settings";
 
 const TABS: { id: AiFundTab; label: string; icon: React.ElementType }[] = [
@@ -58,6 +67,9 @@ const TABS: { id: AiFundTab; label: string; icon: React.ElementType }[] = [
   { id: "intelligence", label: "Intelligence", icon: Zap },
   { id: "build_os", label: "Build OS", icon: FolderKanban },
   { id: "founderfinder", label: "Founder Finder", icon: Search },
+  { id: "eea_signals", label: "EEA Signals", icon: BookOpen },
+  { id: "events", label: "Events", icon: Calendar },
+  { id: "strategy", label: "DL.AI Strategy", icon: Layers },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -87,6 +99,12 @@ export default function AIFundDashboard() {
         return <BuildOsTab workspace={workspace} />;
       case "founderfinder":
         return <FounderFinderTab workspace={workspace} />;
+      case "eea_signals":
+        return <EEASignalsTab workspace={workspace} />;
+      case "events":
+        return <EventsTab workspace={workspace} />;
+      case "strategy":
+        return <StrategyTab workspace={workspace} />;
       case "settings":
         return <AiFundSettingsTab workspace={workspace} />;
       default:
