@@ -180,6 +180,7 @@ async function runLeverSync() {
   };
 
   if (internalKey) {
+    headers.Authorization = `Bearer ${internalKey}`;
     headers["x-internal-sync-key"] = internalKey;
   } else {
     const session = await createSession();

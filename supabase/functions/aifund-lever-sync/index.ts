@@ -150,9 +150,20 @@ async function resolveSyncContext(
   body: RequestBody,
 ): Promise<{ userId: string; serviceClient: SupabaseClient }> {
   const requestInternalKey = request.headers.get("x-internal-sync-key")?.trim();
+  const authorizationHeader = request.headers.get("authorization");
+  const authorizationInternalKey = authorizationHeader?.startsWith("Bearer ")
+    ? authorizationHeader.slice(7).trim()
+    : null;
   const expectedInternalKey = getOptionalEnv("AIFUND_LEVER_SYNC_INTERNAL_KEY")?.trim();
 
-  if (expectedInternalKey && requestInternalKey && requestInternalKey === expectedInternalKey) {
+  const hasValidInternalKey = Boolean(
+    expectedInternalKey && (
+      requestInternalKey === expectedInternalKey ||
+      authorizationInternalKey === expectedInternalKey
+    ),
+  );
+
+  if (hasValidInternalKey && expectedInternalKey) {
     const serviceClient = createClient(getRequiredEnv("SUPABASE_URL"), getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
     const configuredUserId = asString(body.userId) || getOptionalEnv("AIFUND_LEVER_SYNC_USER_ID");
     const userId = configuredUserId || await resolveInternalDefaultUserId(serviceClient);
@@ -656,23 +667,47 @@ async function createRunRow(
   resurfacingWindowDays: number,
 ): Promise<string> {
   const initialStatus: LeverSyncStatus = mode === "preview" ? "preview" : "preview";
-  const { data, error } = await serviceClient
+  const baseInsert = {
+    user_id: userId,
+    status: initialStatus,
+    mode,
+    source,
+    max_applicants: maxApplicants,
+    summary: {},
+  };
+
+  const insertWithExtendedFields = {
+    ...baseInsert,
+    include_archived: includeArchived,
+    resurfacing_window_days: resurfacingWindowDays,
+  };
+
+  let { data, error } = await serviceClient
     .from("aifund_lever_sync_runs")
-    .insert({
-      user_id: userId,
-      status: initialStatus,
-      mode,
-      source,
-      max_applicants: maxApplicants,
-      include_archived: includeArchived,
-      resurfacing_window_days: resurfacingWindowDays,
-      summary: {},
-    })
+    .insert(insertWithExtendedFields)
     .select("id")
     .single();
 
+  const isLegacyColumnError = Boolean(
+    error &&
+      error.code === "PGRST204" &&
+      (error.message.includes("include_archived") || error.message.includes("resurfacing_window_days")),
+  );
+
+  if (isLegacyColumnError) {
+    console.warn("aifund_lever_sync_runs missing extended columns; retrying with legacy payload.");
+    const legacyInsertResult = await serviceClient
+      .from("aifund_lever_sync_runs")
+      .insert(baseInsert)
+      .select("id")
+      .single();
+    data = legacyInsertResult.data;
+    error = legacyInsertResult.error;
+  }
+
   if (error || !data) {
-    throw new Error("Failed to create Lever sync run");
+    const details = error ? `${error.code ?? "unknown"} ${error.message}` : "no data returned";
+    throw new Error(`Failed to create Lever sync run: ${details}`);
   }
 
   return (data as LeverSyncRunRow).id;
