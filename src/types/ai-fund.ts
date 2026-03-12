@@ -106,7 +106,7 @@ export type AiFundConceptCoBuildStatus = "yes" | "no" | "unclear";
 
 export type IntelligenceProvider = "exa" | "parallel" | "github" | "harmonic" | "manual";
 
-export type IntegrationProvider = "harmonic" | "exa" | "github" | "parallel" | "anthropic" | "huggingface";
+export type IntegrationProvider = "harmonic" | "exa" | "github" | "parallel" | "anthropic" | "huggingface" | "lever";
 
 export type SourcingChannelProvider = "exa" | "parallel" | "github";
 
@@ -637,6 +637,42 @@ export interface AiFundIntegrationTestResult {
   checkedAt: string;
   message: string;
   metadata: Record<string, unknown> | null;
+}
+
+export type LeverSyncMode = "preview" | "sync";
+
+export type LeverSyncRoute =
+  | "priority_outreach"
+  | "operator_review"
+  | "nurture_recheck"
+  | "archive";
+
+export interface LeverSyncRequest {
+  mode?: LeverSyncMode;
+  source?: "lever_api" | "manual_rows";
+  maxApplicants?: number;
+  includeArchived?: boolean;
+  resurfacingWindowDays?: number;
+}
+
+export interface LeverSyncRouteCounts {
+  priorityOutreach: number;
+  operatorReview: number;
+  nurtureRecheck: number;
+  archive: number;
+}
+
+export interface LeverSyncResponse {
+  runId: string;
+  status: "preview" | "completed" | "failed";
+  mode: LeverSyncMode;
+  source: "lever_api" | "manual_rows";
+  scannedApplicants: number;
+  createdPeople: number;
+  updatedPeople: number;
+  resurfacedApplicants: number;
+  routeCounts: LeverSyncRouteCounts;
+  errorMessage: string | null;
 }
 
 // ---------------------------------------------------------------------------

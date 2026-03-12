@@ -1,0 +1,92 @@
+name: Lever Sync
+
+on:
+  schedule:
+    - cron: "0 15 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Sync mode"
+        required: true
+        default: "sync"
+      max_applicants:
+        description: "Max applicants to scan"
+        required: true
+        default: "120"
+      include_archived:
+        description: "Include archived applicants (true/false)"
+        required: true
+        default: "false"
+      resurfacing_window_days:
+        description: "Resurfacing window days"
+        required: true
+        default: "180"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: founderfinder-lever-sync
+  cancel-in-progress: false
+
+jobs:
+  lever-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      SMOKE_SUPABASE_REFRESH_TOKEN: ${{ secrets.SMOKE_SUPABASE_REFRESH_TOKEN }}
+      SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+      SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+      LEVER_SYNC_MODE: ${{ github.event.inputs.mode || 'sync' }}
+      LEVER_SYNC_MAX_APPLICANTS: ${{ github.event.inputs.max_applicants || '120' }}
+      LEVER_SYNC_INCLUDE_ARCHIVED: ${{ github.event.inputs.include_archived || 'false' }}
+      LEVER_SYNC_RESURFACING_WINDOW_DAYS: ${{ github.event.inputs.resurfacing_window_days || '180' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          test -n "$VERCEL_ORG_ID" || { echo "Missing VERCEL_ORG_ID"; exit 1; }
+          test -n "$VERCEL_PROJECT_ID" || { echo "Missing VERCEL_PROJECT_ID"; exit 1; }
+          test -n "$VERCEL_TOKEN" || { echo "Missing VERCEL_TOKEN"; exit 1; }
+
+          has_refresh=0
+          has_password=0
+
+          if [ -n "$SMOKE_SUPABASE_REFRESH_TOKEN" ]; then
+            has_refresh=1
+          fi
+
+          if [ -n "$SMOKE_EMAIL" ] && [ -n "$SMOKE_PASSWORD" ]; then
+            has_password=1
+          fi
+
+          if [ "$has_refresh" -eq 0 ] && [ "$has_password" -eq 0 ]; then
+            echo "Missing auth credentials. Set SMOKE_SUPABASE_REFRESH_TOKEN or SMOKE_EMAIL+SMOKE_PASSWORD."
+            exit 1
+          fi
+
+      - name: Normalize Vercel IDs
+        run: |
+          echo "VERCEL_ORG_ID=$(printf '%s' "$VERCEL_ORG_ID" | tr -d '\r\n')" >> "$GITHUB_ENV"
+          echo "VERCEL_PROJECT_ID=$(printf '%s' "$VERCEL_PROJECT_ID" | tr -d '\r\n')" >> "$GITHUB_ENV"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull Vercel environment
+        run: npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Run Lever sync
+        run: node scripts/lever-sync.mjs

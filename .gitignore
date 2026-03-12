@@ -28,3 +28,4 @@ dist-ssr
 # SourceKit branding (not part of FounderFinder)
 sourcekit-poster.png
 sourcekit-poster.svg
+.vercel

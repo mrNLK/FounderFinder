@@ -69,6 +69,7 @@ Copy `.env.example` to `.env` and fill in your values:
 | `npm run preview` | Preview production build locally |
 | `npm run smoke:build-os` | Build OS quick smoke test |
 | `npm run smoke:build-os:full` | Build OS full 5-stage end-to-end smoke |
+| `npm run sync:lever` | Run Lever applicant sync automation (preview/sync mode via env) |
 
 ## Documentation
 

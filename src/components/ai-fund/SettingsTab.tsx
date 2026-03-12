@@ -5,12 +5,14 @@ import type {
   AiFundHarmonicSavedSearch,
   AiFundIntegrationConfig,
   AiFundIntegrationTestResult,
+  LeverSyncResponse,
   AiFundSourcingChannel,
   AiFundWorkspace,
   IntegrationProvider,
   SourcingChannelProvider,
 } from "@/types/ai-fund";
 import { testAiFundIntegration } from "@/lib/aifund-settings";
+import { runLeverSync } from "@/lib/lever-sync";
 import { fetchHarmonicDebugSnapshot, type HarmonicDebugSnapshot } from "@/lib/harmonic";
 
 interface Props {
@@ -65,6 +67,11 @@ export default function AiFundSettingsTab({ workspace }: Props) {
   const [expandedCompanyId, setExpandedCompanyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [leverMaxApplicants, setLeverMaxApplicants] = useState(120);
+  const [leverIncludeArchived, setLeverIncludeArchived] = useState(false);
+  const [leverResurfacingWindowDays, setLeverResurfacingWindowDays] = useState(180);
+  const [leverSyncing, setLeverSyncing] = useState<"preview" | "sync" | null>(null);
+  const [leverSyncResult, setLeverSyncResult] = useState<LeverSyncResponse | null>(null);
 
   useEffect(() => {
     setDraft(buildDraftFromSettings(workspace.settings));
@@ -156,6 +163,7 @@ export default function AiFundSettingsTab({ workspace }: Props) {
           ...(draft.apiKeys.huggingface?.trim() ? { apiKey: draft.apiKeys.huggingface.trim() } : {}),
           model: draft.huggingfaceModel.trim() || null,
         },
+        lever: draft.apiKeys.lever?.trim() ? { apiKey: draft.apiKeys.lever.trim() } : {},
       };
 
       await workspace.updateSettings({
@@ -222,6 +230,7 @@ export default function AiFundSettingsTab({ workspace }: Props) {
       case "exa":
       case "github":
       case "parallel":
+      case "lever":
         return {
           [provider]: {
             apiKey: draft.apiKeys[provider]?.trim() || undefined,
@@ -257,6 +266,31 @@ export default function AiFundSettingsTab({ workspace }: Props) {
       }));
     } finally {
       setTestingProvider(null);
+    }
+  };
+
+  const handleLeverSync = async (mode: "preview" | "sync"): Promise<void> => {
+    setError(null);
+    setSaved(null);
+    setLeverSyncing(mode);
+
+    try {
+      const result = await runLeverSync({
+        mode,
+        source: "lever_api",
+        maxApplicants: leverMaxApplicants,
+        includeArchived: leverIncludeArchived,
+        resurfacingWindowDays: leverResurfacingWindowDays,
+      });
+      setLeverSyncResult(result);
+      setSaved(mode === "preview" ? "Lever preview completed" : "Lever sync completed");
+      if (mode === "sync") {
+        await workspace.refresh();
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Lever sync failed");
+    } finally {
+      setLeverSyncing(null);
     }
   };
 
@@ -307,7 +341,7 @@ export default function AiFundSettingsTab({ workspace }: Props) {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {(["harmonic", "exa", "github", "parallel", "anthropic", "huggingface"] as IntegrationProvider[]).map((provider) => {
+          {(["harmonic", "exa", "github", "parallel", "anthropic", "huggingface", "lever"] as IntegrationProvider[]).map((provider) => {
             const config = workspace.settings.integrations[provider];
             return (
               <div key={provider} className="rounded-lg border border-border bg-background p-4">
@@ -420,6 +454,109 @@ export default function AiFundSettingsTab({ workspace }: Props) {
             );
           })}
         </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold text-foreground">Lever Sync Automation</h2>
+          </div>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+            workspace.settings.integrations.lever.configured
+              ? "border border-primary/20 bg-primary/10 text-primary"
+              : "border border-border bg-secondary text-muted-foreground"
+          }`}>
+            {workspace.settings.integrations.lever.configured ? "Ready" : "Lever key missing"}
+          </span>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Max Applicants</label>
+            <input
+              type="number"
+              min={1}
+              max={500}
+              value={leverMaxApplicants}
+              onChange={(event) => setLeverMaxApplicants(Number(event.target.value) || 1)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Resurface Window (days)</label>
+            <input
+              type="number"
+              min={30}
+              max={730}
+              value={leverResurfacingWindowDays}
+              onChange={(event) => setLeverResurfacingWindowDays(Number(event.target.value) || 180)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div className="flex items-end">
+            <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={leverIncludeArchived}
+                onChange={(event) => setLeverIncludeArchived(event.target.checked)}
+                className="h-4 w-4 rounded border-border bg-background"
+              />
+              Include archived applicants
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void handleLeverSync("preview")}
+            disabled={leverSyncing !== null || !workspace.settings.integrations.lever.configured}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+          >
+            {leverSyncing === "preview" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            {leverSyncing === "preview" ? "Previewing..." : "Preview Run"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleLeverSync("sync")}
+            disabled={leverSyncing !== null || !workspace.settings.integrations.lever.configured}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            {leverSyncing === "sync" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {leverSyncing === "sync" ? "Syncing..." : "Run Sync"}
+          </button>
+        </div>
+
+        {leverSyncResult && (
+          <div className="mt-4 rounded-lg border border-border bg-background p-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Scanned</p>
+                <p className="text-lg font-semibold text-foreground">{leverSyncResult.scannedApplicants}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Created</p>
+                <p className="text-lg font-semibold text-foreground">{leverSyncResult.createdPeople}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Updated</p>
+                <p className="text-lg font-semibold text-foreground">{leverSyncResult.updatedPeople}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Resurfaced</p>
+                <p className="text-lg font-semibold text-foreground">{leverSyncResult.resurfacedApplicants}</p>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-2 md:grid-cols-4 text-xs text-muted-foreground">
+              <div>Priority Outreach: <span className="text-foreground font-medium">{leverSyncResult.routeCounts.priorityOutreach}</span></div>
+              <div>Operator Review: <span className="text-foreground font-medium">{leverSyncResult.routeCounts.operatorReview}</span></div>
+              <div>Nurture/Recheck: <span className="text-foreground font-medium">{leverSyncResult.routeCounts.nurtureRecheck}</span></div>
+              <div>Archive: <span className="text-foreground font-medium">{leverSyncResult.routeCounts.archive}</span></div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-border bg-card p-5">
