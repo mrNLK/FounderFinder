@@ -12,7 +12,7 @@ on:
       max_applicants:
         description: "Max applicants to scan"
         required: true
-        default: "120"
+        default: "1000"
       include_archived:
         description: "Include archived applicants (true/false)"
         required: true
@@ -37,11 +37,14 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      LEVER_SYNC_REFRESH_TOKEN: ${{ secrets.LEVER_SYNC_REFRESH_TOKEN || secrets.SMOKE_SUPABASE_REFRESH_TOKEN }}
+      LEVER_SYNC_EMAIL: ${{ secrets.LEVER_SYNC_EMAIL || secrets.SMOKE_EMAIL }}
+      LEVER_SYNC_PASSWORD: ${{ secrets.LEVER_SYNC_PASSWORD || secrets.SMOKE_PASSWORD }}
       SMOKE_SUPABASE_REFRESH_TOKEN: ${{ secrets.SMOKE_SUPABASE_REFRESH_TOKEN }}
       SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
       SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
       LEVER_SYNC_MODE: ${{ github.event.inputs.mode || 'sync' }}
-      LEVER_SYNC_MAX_APPLICANTS: ${{ github.event.inputs.max_applicants || '120' }}
+      LEVER_SYNC_MAX_APPLICANTS: ${{ github.event.inputs.max_applicants || '1000' }}
       LEVER_SYNC_INCLUDE_ARCHIVED: ${{ github.event.inputs.include_archived || 'false' }}
       LEVER_SYNC_RESURFACING_WINDOW_DAYS: ${{ github.event.inputs.resurfacing_window_days || '180' }}
 
@@ -58,16 +61,16 @@ jobs:
           has_refresh=0
           has_password=0
 
-          if [ -n "$SMOKE_SUPABASE_REFRESH_TOKEN" ]; then
+          if [ -n "$LEVER_SYNC_REFRESH_TOKEN" ]; then
             has_refresh=1
           fi
 
-          if [ -n "$SMOKE_EMAIL" ] && [ -n "$SMOKE_PASSWORD" ]; then
+          if [ -n "$LEVER_SYNC_EMAIL" ] && [ -n "$LEVER_SYNC_PASSWORD" ]; then
             has_password=1
           fi
 
           if [ "$has_refresh" -eq 0 ] && [ "$has_password" -eq 0 ]; then
-            echo "Missing auth credentials. Set SMOKE_SUPABASE_REFRESH_TOKEN or SMOKE_EMAIL+SMOKE_PASSWORD."
+            echo "Missing auth credentials. Set LEVER_SYNC_EMAIL+LEVER_SYNC_PASSWORD or LEVER_SYNC_REFRESH_TOKEN."
             exit 1
           fi
 
