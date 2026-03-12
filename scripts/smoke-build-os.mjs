@@ -86,23 +86,45 @@ async function createSession() {
     "Content-Type": "application/json",
   };
 
-  if (refreshToken) {
-    return fetchJson(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-  }
+  const attempts = [];
 
   if (email && password) {
-    return fetchJson(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ email, password }),
+    attempts.push({
+      label: "password",
+      run: () => fetchJson(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ email, password }),
+      }),
     });
   }
 
-  throw new Error("Set SMOKE_SUPABASE_REFRESH_TOKEN or SMOKE_EMAIL and SMOKE_PASSWORD.");
+  if (refreshToken) {
+    attempts.push({
+      label: "refresh_token",
+      run: () => fetchJson(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      }),
+    });
+  }
+
+  if (attempts.length === 0) {
+    throw new Error("Set SMOKE_EMAIL and SMOKE_PASSWORD, or SMOKE_SUPABASE_REFRESH_TOKEN.");
+  }
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    try {
+      return await attempt.run();
+    } catch (error) {
+      lastError = error;
+      console.warn(`Smoke auth with ${attempt.label} failed; trying next method if available.`);
+    }
+  }
+
+  throw lastError || new Error("Unable to create smoke test auth session.");
 }
 
 async function runSmokeTest() {
