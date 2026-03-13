@@ -138,14 +138,42 @@ async function createSession() {
       return await attempt.run();
     } catch (error) {
       lastError = error;
-      console.warn(`Smoke auth with ${attempt.label} failed; trying next method if available.`);
+      console.warn(`Full smoke auth with ${attempt.label} failed; trying next method if available.`);
     }
   }
 
-  throw lastError || new Error("Unable to create smoke test auth session.");
+  throw lastError || new Error("Unable to create full smoke auth session.");
 }
 
-async function runSmokeTest() {
+function artifactCard(page, title) {
+  return page
+    .getByRole("heading", { name: title })
+    .locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]');
+}
+
+async function fillArtifact(page, artifactTitle, markdown) {
+  const card = artifactCard(page, artifactTitle);
+  await card.locator("textarea").fill(markdown);
+  await card.getByRole("button", { name: "Save" }).click();
+}
+
+async function checkChecklistItem(page, label) {
+  const row = page.locator("label", { hasText: label }).first();
+  const checkbox = row.locator('input[type="checkbox"]');
+  const checked = await checkbox.isChecked();
+  if (!checked) {
+    await checkbox.check();
+  }
+}
+
+function projectFieldByLabel(page, labelText) {
+  return page
+    .locator("label", { hasText: labelText })
+    .first()
+    .locator("xpath=following-sibling::input[1] | following-sibling::select[1] | following-sibling::textarea[1]");
+}
+
+async function runFullSmokeTest() {
   bootstrapEnv();
 
   const baseUrl = process.env.SMOKE_BASE_URL || DEFAULT_BASE_URL;
@@ -173,6 +201,7 @@ async function runSmokeTest() {
   const result = {
     baseUrl,
     loggedIn: false,
+    fullFlow: false,
     steps: [],
   };
 
@@ -184,7 +213,6 @@ async function runSmokeTest() {
     if (loginVisible) {
       throw new Error("Smoke login failed: app still shows Sign In.");
     }
-
     result.loggedIn = true;
 
     await page.getByRole("button", { name: "Build OS" }).click();
@@ -193,48 +221,80 @@ async function runSmokeTest() {
     });
     result.steps.push("opened_build_os");
 
-    const title = `Smoke Test ${new Date().toISOString().slice(0, 19)}`;
+    const title = `Full Smoke ${new Date().toISOString().slice(0, 19)}`;
     await page.getByPlaceholder("Idea or product name").fill(title);
-    await page.locator('textarea[placeholder="Problem statement"]').fill("Smoke test problem statement");
-    await page.getByPlaceholder("Target user").fill("Smoke test user");
+    await page.locator('textarea[placeholder="Problem statement"]').fill("Full smoke: prove Build OS from explore to shipped.");
+    await page.getByPlaceholder("Target user").fill("Internal builder");
     await page.getByRole("button", { name: "Create Build Project" }).click();
     await page.getByRole("heading", { name: title }).waitFor({ timeout: 30_000 });
     result.steps.push("created_project");
 
-    const experimentCard = page
-      .getByRole("heading", { name: "Experiment Log" })
-      .locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]');
-    await experimentCard.locator("textarea").fill("# Experiment Log\n\nSmoke test entry");
-    await experimentCard.getByRole("button", { name: "Save" }).click();
-    result.steps.push("saved_experiment_log");
-
+    await fillArtifact(page, "Experiment Log", "# Experiment Log\n\nValidated APIs and rough architecture.");
     await page.getByRole("button", { name: "Advance Stage" }).click();
     await page.getByText("Write the PRD and iterate with research until the opportunity and market signals are crisp.").waitFor({
       timeout: 30_000,
     });
     result.steps.push("advanced_to_prd_research");
 
-    const prdCard = page
-      .getByRole("heading", { name: "PRD" })
-      .locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]');
-    await prdCard.locator("textarea").fill("# Product Requirements Document\n\nSmoke prompt update check");
-    const promptPreview = page.locator("pre");
-    await promptPreview.waitFor({ timeout: 30_000 });
-    const promptText = await promptPreview.textContent();
-    if (!promptText || !promptText.includes("Smoke prompt update check")) {
-      throw new Error("Prompt packet did not update from live PRD draft.");
-    }
-    result.steps.push("prompt_packet_updates_from_draft");
-
+    await fillArtifact(page, "PRD", "# Product Requirements Document\n\n## Scope\n\nBuild OS full flow.");
+    await fillArtifact(page, "Market Signals", "# Market Signals\n\nClear demand from repeated founder workflow.");
     await page.getByRole("button", { name: "Advance Stage" }).click();
-    await page.getByText("Mark the research checklist item complete before moving on.").waitFor({
+    await page.getByText("Mark the research checklist item complete before moving on.").waitFor({ timeout: 30_000 });
+    await checkChecklistItem(page, "Research pass captured competitive context and market signals.");
+    await checkChecklistItem(page, "PRD scope is specific enough to hand to engineering.");
+    await page.getByRole("button", { name: "Advance Stage" }).click();
+    await page.getByText("Write the TDD and pressure-test it with a fresh engineering context until there are no open questions.").waitFor({
       timeout: 30_000,
     });
-    result.steps.push("prd_gate_blocks_without_checklist");
+    result.steps.push("advanced_to_tdd_review");
 
+    await fillArtifact(page, "TDD", "# Technical Design Document\n\n## Architecture\n\nStage-driven workflow.");
+    await fillArtifact(page, "Engineering Questions", "# Engineering Questions\n\nAll blockers closed.");
+    await page.getByRole("button", { name: "Advance Stage" }).click();
+    await page.getByText("Open engineering questions must be resolved before moving on.").waitFor({ timeout: 30_000 });
+    await checkChecklistItem(page, "Open engineering questions are resolved or explicitly parked.");
+    await checkChecklistItem(page, "The TDD is specific enough for implementation without new product decisions.");
+    await page.getByRole("button", { name: "Advance Stage" }).click();
+    await page.getByText("Implement, deploy, and run QA loops until the spec is complete and tested.").waitFor({
+      timeout: 30_000,
+    });
+    result.steps.push("advanced_to_build_loop");
+
+    await fillArtifact(page, "Implementation Notes", "# Implementation Notes\n\nShipped core Build OS surfaces.");
+    await fillArtifact(page, "QA Notes", "# QA Notes\n\nPass on stage transitions and prompt packets.");
+    await projectFieldByLabel(page, "Deploy URL").fill("https://founder-finder-mu.vercel.app");
+    await page.getByRole("button", { name: "Advance Stage" }).click();
+    await page.getByText("Spec passes QA must be checked before moving on.").waitFor({ timeout: 30_000 });
+    await checkChecklistItem(page, "Design skill guidance was applied to the shipped UI.");
+    await checkChecklistItem(page, "Closed-loop QA passed against the current spec.");
+    await page.getByRole("button", { name: "Advance Stage" }).click();
+    await page.getByText("Return for manual testing, polish rough edges, and either ship or park the project.").waitFor({
+      timeout: 30_000,
+    });
+    result.steps.push("advanced_to_manual_polish");
+
+    await fillArtifact(page, "Manual Test Notes", "# Manual Test Notes\n\nFinal pass done, no blockers.");
+    await fillArtifact(page, "Polish Backlog", "# Polish Backlog\n\n- Optional copy tweaks");
+    await checkChecklistItem(page, "Manual testing identified the remaining polish or sign-off items.");
+    await page.getByRole("button", { name: "Finish Project" }).click();
+    await page.getByText("Mark the project as shipped or parked before finishing.").waitFor({ timeout: 30_000 });
+
+    await projectFieldByLabel(page, "Status").selectOption("shipped");
+    await page.getByRole("button", { name: "Finish Project" }).click();
+
+    const finishButton = page.getByRole("button", { name: "Finish Project" });
+    await finishButton.waitFor({ timeout: 30_000 });
+    const isDisabled = await finishButton.isDisabled();
+    if (!isDisabled) {
+      throw new Error("Expected Finish Project button to be disabled after completion.");
+    }
+    await page.getByText("Shipped").first().waitFor({ timeout: 30_000 });
+    result.steps.push("completed_manual_polish_and_shipped");
+
+    result.fullFlow = true;
     console.log(JSON.stringify(result, null, 2));
   } catch (error) {
-    const screenshotPath = path.join("/tmp", "founderfinder-build-os-smoke-failure.png");
+    const screenshotPath = path.join("/tmp", "founderfinder-build-os-full-smoke-failure.png");
     try {
       await page.screenshot({ path: screenshotPath, fullPage: true });
       result.screenshot = screenshotPath;
@@ -250,4 +310,4 @@ async function runSmokeTest() {
   }
 }
 
-await runSmokeTest();
+await runFullSmokeTest();

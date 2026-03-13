@@ -1,6 +1,6 @@
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
-export const PROVIDER_KEYS = ["harmonic", "exa", "github", "parallel", "anthropic", "huggingface"] as const;
+export const PROVIDER_KEYS = ["harmonic", "exa", "github", "parallel", "anthropic", "huggingface", "lever"] as const;
 export type ProviderKey = typeof PROVIDER_KEYS[number];
 
 export type ProviderSource = "saved" | "project_env" | "missing";
@@ -243,6 +243,8 @@ function getEnvApiKey(provider: ProviderKey): string | null {
       return asString(Deno.env.get("ANTHROPIC_API_KEY"));
     case "huggingface":
       return asString(Deno.env.get("HUGGINGFACE_API_KEY")) || asString(Deno.env.get("HF_TOKEN"));
+    case "lever":
+      return asString(Deno.env.get("LEVER_API_KEY"));
   }
 }
 
@@ -355,6 +357,7 @@ export function buildPublicAiFundSettings(row: UserSettingsRow | null): PublicAi
     parallel: "Parallel",
     anthropic: "Claude",
     huggingface: "Hugging Face",
+    lever: "Lever",
   };
 
   for (const provider of PROVIDER_KEYS) {

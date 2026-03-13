@@ -30,6 +30,7 @@ const INTEGRATION_LABELS: Record<IntegrationProvider, string> = {
   parallel: "Parallel",
   anthropic: "Claude",
   huggingface: "Hugging Face",
+  lever: "Lever",
 };
 
 export function createDefaultAiFundSettings(): AiFundAppSettings {
@@ -79,6 +80,13 @@ export function createDefaultAiFundSettings(): AiFundAppSettings {
         source: "missing",
         maskedKey: null,
         model: "BAAI/bge-small-en-v1.5",
+      },
+      lever: {
+        provider: "lever",
+        label: INTEGRATION_LABELS.lever,
+        configured: false,
+        source: "missing",
+        maskedKey: null,
       },
     },
     sourcingChannels: [

@@ -67,6 +67,17 @@ Copy `.env.example` to `.env` and fill in your values:
 | `npm run build` | Production build |
 | `npm run lint` | Run ESLint |
 | `npm run preview` | Preview production build locally |
+| `npm run smoke:build-os` | Build OS quick smoke test |
+| `npm run smoke:build-os:full` | Build OS full 5-stage end-to-end smoke |
+| `npm run sync:lever` | Run Lever applicant sync automation (preview/sync mode via env) |
+
+## Documentation
+
+- FounderFinder user docs site: `/founderfinder-docs/` (served from `public/founderfinder-docs/index.html`)
+- FounderFinder user reference (Markdown): `docs/founderfinder-user-reference.md`
+- Build OS docs site: `/build-os-docs/` (served from `public/build-os-docs/index.html`)
+- Build OS how-to guide: `docs/build-os-how-to.md`
+- Build OS QA swarm report: `docs/qa-swarm-build-os-2026-03-11.md`
 
 ## Project Structure
 
