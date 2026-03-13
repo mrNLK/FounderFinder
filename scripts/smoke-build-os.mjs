@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 
 const ROOT_DIR = process.cwd();
 const DEFAULT_BASE_URL = "https://founder-finder-mu.vercel.app";
-const AUTH_STORAGE_KEY = "sb-iirwwadiedcbcrxpehog-auth-token";
+const FALLBACK_AUTH_STORAGE_KEY = "sb-iirwwadiedcbcrxpehog-auth-token";
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -52,6 +52,24 @@ function requireEnv(name) {
     throw new Error(`Missing ${name}`);
   }
   return value;
+}
+
+function deriveSupabaseAuthStorageKey(supabaseUrl) {
+  if (process.env.SMOKE_SUPABASE_AUTH_STORAGE_KEY) {
+    return process.env.SMOKE_SUPABASE_AUTH_STORAGE_KEY;
+  }
+
+  try {
+    const hostname = new URL(supabaseUrl).hostname;
+    const projectRef = hostname.split(".")[0];
+    if (projectRef) {
+      return `sb-${projectRef}-auth-token`;
+    }
+  } catch {
+    // fall through to legacy key fallback
+  }
+
+  return FALLBACK_AUTH_STORAGE_KEY;
 }
 
 async function fetchJson(url, init) {
@@ -131,6 +149,8 @@ async function runSmokeTest() {
   bootstrapEnv();
 
   const baseUrl = process.env.SMOKE_BASE_URL || DEFAULT_BASE_URL;
+  const supabaseUrl = process.env.SMOKE_SUPABASE_URL || requireEnv("VITE_SUPABASE_URL");
+  const authStorageKey = deriveSupabaseAuthStorageKey(supabaseUrl);
   const headless = process.env.SMOKE_HEADLESS !== "false";
   const browserChannel = process.env.SMOKE_BROWSER_CHANNEL ?? (process.env.CI ? "" : "chrome");
   const session = await createSession();
@@ -145,7 +165,7 @@ async function runSmokeTest() {
   await context.addInitScript(({ value, key }) => {
     window.localStorage.setItem(key, value);
   }, {
-    key: AUTH_STORAGE_KEY,
+    key: authStorageKey,
     value: JSON.stringify(session),
   });
 
