@@ -261,8 +261,12 @@
           <a href="#walkthrough">End-to-End Walkthrough</a>
           <a href="#features">Feature Reference</a>
           <a href="#best-practices">Best Practices</a>
+          <a href="#tab-playbook">Tab Playbook</a>
+          <a href="#cadence">Role Cadence</a>
           <a href="#lever-automation">Lever Automation</a>
           <a href="#use-cases">Use Cases</a>
+          <a href="#troubleshooting">Troubleshooting</a>
+          <a href="#onboarding">Onboarding</a>
           <a href="#share-copy">Shareable Description</a>
           <a href="#qa-swarm">QA Swarm</a>
           <a href="#faq">FAQ</a>
@@ -476,6 +480,100 @@
           </div>
         </section>
 
+        <section class="card" id="tab-playbook">
+          <span class="pill">Tab Playbook</span>
+          <h3>What to do in each tab</h3>
+          <div class="grid two">
+            <article class="stage">
+              <h4>Settings</h4>
+              <ul>
+                <li>Confirm Exa is configured before any sourcing run.</li>
+                <li>Confirm Parallel is configured for enrichment + outreach hooks.</li>
+                <li>Confirm Harmonic is configured for deeper research workflows.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>Founder Finder</h4>
+              <ul>
+                <li>Run search and wait for source, score, and enrichment stages.</li>
+                <li>Use Tier and Bay Area/B2B filters for fast triage.</li>
+                <li>Batch import Tier 1, manually review Tier 2.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>Talent Pool</h4>
+              <ul>
+                <li>Treat this as the canonical candidate system of record.</li>
+                <li>Resolve duplicates by normalized profile links and name/company.</li>
+                <li>Keep source-channel metadata on every profile.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>Concepts + Matching</h4>
+              <ul>
+                <li>Keep concept problem statements current before matching.</li>
+                <li>Link high-priority candidates to concepts within 24 hours.</li>
+                <li>Store explicit fit rationale in notes.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>Engagements + Residencies + Investment</h4>
+              <ul>
+                <li>Track outreach touchpoints and next follow-up date.</li>
+                <li>Promote only candidates with evidence + concept alignment.</li>
+                <li>Capture decision notes: thesis, risks, next action.</li>
+              </ul>
+            </article>
+            <article class="stage">
+              <h4>Build OS</h4>
+              <ul>
+                <li>Do not skip artifact or checklist gates.</li>
+                <li>Keep PRD and TDD updated as project reality changes.</li>
+                <li>Close every project as <code>shipped</code> or <code>parked</code>.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="card" id="cadence">
+          <span class="pill">Role Cadence</span>
+          <h3>Weekly operating rhythm by role</h3>
+          <div class="grid two">
+            <article class="stage">
+              <h4>Partner (30-45 min weekly)</h4>
+              <ol>
+                <li>Review Tier 1 imports and priority outreach queue.</li>
+                <li>Approve residency and investment promotions.</li>
+                <li>Resolve top pipeline blockers.</li>
+              </ol>
+            </article>
+            <article class="stage">
+              <h4>Operator (3x weekly)</h4>
+              <ol>
+                <li>Run Founder Finder sourcing cycles.</li>
+                <li>Triage Tier 2 and import qualified profiles.</li>
+                <li>Update matching and engagement statuses.</li>
+              </ol>
+            </article>
+            <article class="stage">
+              <h4>Recruiting / ATS Ops (weekly)</h4>
+              <ol>
+                <li>Sync Lever exports.</li>
+                <li>Resolve dedupe and metadata gaps.</li>
+                <li>Resurface prior applicants with improved signals.</li>
+              </ol>
+            </article>
+            <article class="stage">
+              <h4>Builder / Product Lead (daily)</h4>
+              <ol>
+                <li>Advance Build OS artifacts.</li>
+                <li>Update checklist gates.</li>
+                <li>Capture QA and polish outcomes.</li>
+              </ol>
+            </article>
+          </div>
+        </section>
+
         <section class="card" id="lever-automation">
           <span class="pill">Lever Automation</span>
           <h3>Guidelines to auto-identify strong new + previous applicants</h3>
@@ -573,6 +671,61 @@ if score < 40: route = "Archive"</code></pre>
                 Intelligence tab is used before key meetings to build concise diligence packets on candidates and markets.
               </p>
             </article>
+          </div>
+        </section>
+
+        <section class="card" id="troubleshooting">
+          <span class="pill">Troubleshooting</span>
+          <h3>Common issues and fast fixes</h3>
+          <div class="grid two">
+            <article class="stage">
+              <h4>Error: Failed to send a request to the Edge Function</h4>
+              <ol>
+                <li>Confirm you are logged into FounderFinder (not SourceKit).</li>
+                <li>Confirm Exa is configured in <code>Settings</code>.</li>
+                <li>Hard refresh and rerun <code>Find Founders</code>.</li>
+                <li>If still failing, verify deployed function slugs include <code>founder-source</code> and <code>founder-enrich</code>.</li>
+              </ol>
+            </article>
+            <article class="stage">
+              <h4>No password available</h4>
+              <ol>
+                <li>Use password reset from FounderFinder login page.</li>
+                <li>Reset the account in FounderFinder Supabase project for the same email.</li>
+                <li>Sign in and verify membership access check passes.</li>
+              </ol>
+            </article>
+            <article class="stage">
+              <h4>GitHub CLI run watch errors</h4>
+              <p class="muted">Do not include angle brackets in run ids.</p>
+              <pre><code>gh run watch 23031335682
+gh run view 23031335682 --log-failed</code></pre>
+            </article>
+            <article class="stage">
+              <h4>Merge blocked by repo rules</h4>
+              <ul>
+                <li>Use PR flow only (no direct pushes to <code>main</code>).</li>
+                <li>Wait for required <code>build</code> status check.</li>
+                <li>Resolve all PR conversation threads before merge.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="card" id="onboarding">
+          <span class="pill">Onboarding</span>
+          <h3>New user setup checklist</h3>
+          <ol>
+            <li>Login works and FounderFinder app membership is active.</li>
+            <li>Exa and Parallel are configured in Settings.</li>
+            <li>Run one successful Founder Finder sourcing pass.</li>
+            <li>Import one candidate into Talent Pool.</li>
+            <li>Link one candidate to a concept in Matching.</li>
+            <li>Create one engagement record and set next action date.</li>
+            <li>Create one Build OS project and populate required artifacts.</li>
+          </ol>
+          <div class="callout">
+            Target onboarding completion time: 20 minutes for an operator, 10 minutes for a returning user.
           </div>
         </section>
 
