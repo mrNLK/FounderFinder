@@ -56,6 +56,12 @@ async function invokeWithFallback<T>(
     if (!error) {
       return data as T;
     }
+
+    const status = (error as { context?: Response } | null)?.context?.status;
+    if (status !== 404) {
+      throw new Error(await extractFunctionErrorMessage(error));
+    }
+
     lastError = error;
   }
 
