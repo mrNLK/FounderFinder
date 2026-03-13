@@ -126,3 +126,111 @@ npm run smoke:build-os
 npm run smoke:build-os:full
 LEVER_SYNC_MODE=preview npm run sync:lever
 ```
+
+## 9) Detailed Tab Playbook
+
+### Settings
+
+- Confirm Exa key (`configured=true`) before running Founder Finder.
+- Confirm Parallel key to enable enrichment and outreach hook generation.
+- Confirm Harmonic key for deep company/person research from Intelligence flows.
+
+### Founder Finder
+
+- Run `Find Founders`.
+- Wait for source + score + enrich completion.
+- Use Tier filters and Bay Area/B2B filters before import.
+- Import Tier 1 in batch, then manually review Tier 2.
+
+### Talent Pool
+
+- Use as the canonical profile record.
+- Merge duplicates by normalized LinkedIn/GitHub and name+company.
+- Keep source metadata (`founder-finder`, `lever`, `events`) for attribution.
+
+### Concepts + Matching
+
+- Keep concept problem statements updated before matching.
+- Link imported people to active concepts within 24h of sourcing.
+- Capture match rationale in notes for future review consistency.
+
+### Engagements
+
+- Track each outreach touchpoint and response status.
+- Capture follow-up date in every open engagement.
+- Archive stale threads with explicit reason.
+
+### Residencies + Investment
+
+- Promote only candidates with clear evidence + concept alignment.
+- Keep decision notes structured: thesis, risks, open questions, next action.
+
+### Build OS
+
+- Treat stage exit gates as strict.
+- Keep PRD/TDD as living artifacts.
+- Mark projects `shipped` or `parked` to close loop.
+
+## 10) Role-Based Operating Cadence
+
+### Partner (30-45 min weekly)
+
+1. Review Tier 1 imports.
+2. Approve outreach priority list.
+3. Confirm residency/investment promotions.
+
+### Operator (3x per week)
+
+1. Run Founder Finder.
+2. Triage Tier 2 and import qualified profiles.
+3. Update matching + engagement states.
+
+### Recruiter / ATS Ops (weekly)
+
+1. Sync Lever export.
+2. Resolve dedupe and missing metadata.
+3. Resurface previous applicants crossing thresholds.
+
+### Builder / Product Lead (daily)
+
+1. Progress Build OS artifacts.
+2. Update checklist gates.
+3. Record QA and polish outcomes.
+
+## 11) Troubleshooting and Access
+
+### Error: `Failed to send a request to the Edge Function`
+
+1. Confirm user is logged into FounderFinder project (not SourceKit).
+2. Confirm Exa integration is configured in Settings.
+3. Confirm functions are deployed:
+   - `founder-source`
+   - `founder-enrich`
+4. Retry `Find Founders` after hard refresh.
+
+### No password for FounderFinder
+
+1. Open FounderFinder login page.
+2. Use password reset for `mike@aifund.ai` in the FounderFinder Supabase project.
+3. Set new password.
+4. Sign in and verify membership access.
+
+### GitHub Actions usage errors
+
+- Do not use angle brackets in commands.
+- Correct format:
+
+```bash
+gh run watch 23031335682
+gh run view 23031335682 --log-failed
+```
+
+## 12) New User Onboarding Checklist
+
+1. Account login works and app membership is active.
+2. Exa + Parallel integrations show as configured.
+3. Run one Founder Finder search successfully.
+4. Import at least one candidate into Talent Pool.
+5. Link one candidate to a concept in Matching.
+6. Create one engagement record and status update.
+7. Open Build OS and create one project with seeded artifacts.
