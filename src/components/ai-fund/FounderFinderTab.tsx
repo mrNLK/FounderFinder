@@ -36,6 +36,7 @@ import type {
 import { scoreCandidate } from "@/lib/eea-scorer";
 import {
   startFounderSource,
+  pollFounderSource,
   startFounderEnrich,
   pollFounderEnrich,
   mergeEnrichmentResults,
@@ -156,6 +157,8 @@ export default function FounderFinderTab({ workspace }: Props) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const pollCountRef = useRef(0);
       const MAX_POLL_ATTEMPTS = 60; // 60 × 8s = 8 minutes max
+  const SOURCE_POLL_INTERVAL_MS = 5000;
+  const SOURCE_MAX_POLL_ATTEMPTS = 36; // 36 × 5s = 3 minutes max
 
   // Cleanup poll on unmount
   useEffect(() => {
@@ -196,7 +199,33 @@ export default function FounderFinderTab({ workspace }: Props) {
     try {
       // Step 1: Source from Exa Websets
       setStep("sourcing");
-      const sourceResult = await startFounderSource({ count: 20, appendQueries: true });
+      let sourceResult = await startFounderSource({ count: 20, appendQueries: true });
+
+      if (sourceResult.status === "running") {
+        let sourceCompleted = false;
+
+        for (let attempt = 0; attempt < SOURCE_MAX_POLL_ATTEMPTS; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, SOURCE_POLL_INTERVAL_MS));
+          sourceResult = await pollFounderSource(sourceResult.websetId);
+
+          if (sourceResult.status === "completed") {
+            sourceCompleted = true;
+            break;
+          }
+
+          if (sourceResult.status === "error") {
+            throw new Error(sourceResult.error || "Sourcing failed");
+          }
+        }
+
+        if (!sourceCompleted) {
+          throw new Error("Sourcing timed out. Please retry.");
+        }
+      }
+
+      if (sourceResult.status !== "completed") {
+        throw new Error(sourceResult.error || "Sourcing failed");
+      }
 
       if (!sourceResult.candidates || sourceResult.candidates.length === 0) {
         setStep("complete");
