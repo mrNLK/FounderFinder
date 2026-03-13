@@ -24,6 +24,9 @@ interface FunctionErrorPayload {
   };
 }
 
+const SOURCE_FUNCTION_SLUGS = ["founder-source", "founderfinder-source"] as const;
+const ENRICH_FUNCTION_SLUGS = ["founder-enrich", "founderfinder-enrich"] as const;
+
 async function extractFunctionErrorMessage(error: unknown): Promise<string> {
   const defaultMessage = error instanceof Error ? error.message : "Unknown error";
   const response = (error as { context?: Response } | null)?.context;
@@ -42,6 +45,23 @@ async function extractFunctionErrorMessage(error: unknown): Promise<string> {
   }
 }
 
+async function invokeWithFallback<T>(
+  slugs: readonly string[],
+  body: Record<string, unknown>,
+): Promise<T> {
+  let lastError: unknown = null;
+
+  for (const slug of slugs) {
+    const { data, error } = await supabase.functions.invoke(slug, { body });
+    if (!error) {
+      return data as T;
+    }
+    lastError = error;
+  }
+
+  throw new Error(await extractFunctionErrorMessage(lastError));
+}
+
 // ---------------------------------------------------------------------------
 // Source (Exa Websets)
 // ---------------------------------------------------------------------------
@@ -50,18 +70,24 @@ export async function startFounderSource(config?: {
   count?: number;
   appendQueries?: boolean;
 }): Promise<FounderSourceResponse> {
-  const { data, error } = await supabase.functions.invoke("founder-source", {
-    body: {
+  return invokeWithFallback<FounderSourceResponse>(
+    SOURCE_FUNCTION_SLUGS,
+    {
+      action: "start",
       count: config?.count ?? 20,
       appendQueries: config?.appendQueries ?? true,
     },
-  });
+  );
+}
 
-  if (error) {
-    throw new Error(await extractFunctionErrorMessage(error));
-  }
-
-  return data as FounderSourceResponse;
+export async function pollFounderSource(websetId: string): Promise<FounderSourceResponse> {
+  return invokeWithFallback<FounderSourceResponse>(
+    SOURCE_FUNCTION_SLUGS,
+    {
+      action: "status",
+      websetId,
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -78,35 +104,25 @@ export async function startFounderEnrich(
     existingSignals: string;
   }>,
 ): Promise<FounderEnrichResponse> {
-  const { data, error } = await supabase.functions.invoke("founder-enrich", {
-    body: {
+  return invokeWithFallback<FounderEnrichResponse>(
+    ENRICH_FUNCTION_SLUGS,
+    {
       action: "create",
       candidates,
     },
-  });
-
-  if (error) {
-    throw new Error(await extractFunctionErrorMessage(error));
-  }
-
-  return data as FounderEnrichResponse;
+  );
 }
 
 export async function pollFounderEnrich(
   taskGroupId: string,
 ): Promise<FounderEnrichResponse> {
-  const { data, error } = await supabase.functions.invoke("founder-enrich", {
-    body: {
+  return invokeWithFallback<FounderEnrichResponse>(
+    ENRICH_FUNCTION_SLUGS,
+    {
       action: "status",
       taskGroupId,
     },
-  });
-
-  if (error) {
-    throw new Error(await extractFunctionErrorMessage(error));
-  }
-
-  return data as FounderEnrichResponse;
+  );
 }
 
 // ---------------------------------------------------------------------------

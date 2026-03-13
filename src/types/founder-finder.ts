@@ -77,14 +77,18 @@ export interface ParallelEnrichmentResult {
 // ---------------------------------------------------------------------------
 
 export interface FounderSourceRequest {
+  action?: "start" | "status";
   count?: number;
   appendQueries?: boolean;
+  websetId?: string;
 }
 
 export interface FounderSourceResponse {
+  status: "running" | "completed" | "error";
   websetId: string;
-  totalFound: number;
-  candidates: CandidateResult[];
+  totalFound?: number;
+  deduplicatedCount?: number;
+  candidates?: CandidateResult[];
   error?: string;
 }
 

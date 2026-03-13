@@ -26,14 +26,16 @@ import {
 // ---------------------------------------------------------------------------
 
 interface SourceRequestBody {
+  action?: "start" | "status";
   count?: number;
   appendQueries?: boolean;
+  websetId?: string;
 }
 
 interface SearchQuery {
   query: string;
   count: number;
-      enrichments: Record<string, unknown> | unknown[];
+  searchCriteria: Array<{ description: string }>;
 }
 
 interface EnrichmentColumn {
@@ -46,14 +48,14 @@ interface WebsetItem {
   id: string;
   url: string;
   properties: Record<string, unknown>;
-  enrichments: Record<string, unknown>;
+  enrichments: Record<string, unknown> | unknown[];
 }
 
 // ---------------------------------------------------------------------------
 // Exa Websets API Helpers
 // ---------------------------------------------------------------------------
 
-const EXA_BASE = "https://api.exa.ai";
+const EXA_BASE = "https://api.exa.ai/websets/v0";
 
 async function exaFetch(
   path: string,
@@ -151,6 +153,64 @@ const ENRICHMENTS: EnrichmentColumn[] = [
     options: [{ label: "Deep technical" }, { label: "Technical PM" }, { label: "Non-technical" }, { label: "Unclear" }],
   },
 ];
+
+async function createWebsetWithQueries(
+  apiKey: string,
+  count: number,
+  appendQueries: boolean,
+): Promise<string> {
+  const queries = buildQueries(count);
+  const createPayload = {
+    search: {
+      query: queries.create.query,
+      count: queries.create.count,
+      criteria: queries.create.searchCriteria,
+    },
+    enrichments: ENRICHMENTS.map((enrichment) => {
+      const column: Record<string, unknown> = {
+        description: enrichment.description,
+        format: enrichment.format,
+      };
+
+      if (enrichment.options) {
+        column.options = enrichment.options;
+      }
+
+      return column;
+    }),
+  };
+
+  const websetData = await exaFetch("/websets", apiKey, {
+    method: "POST",
+    body: createPayload,
+  });
+
+  const websetId = asString(websetData.id);
+  if (!websetId) {
+    throw new Error("Failed to create webset — no ID returned");
+  }
+
+  if (appendQueries) {
+    for (const appendQuery of queries.appends) {
+      await exaFetch(`/websets/${websetId}/searches`, apiKey, {
+        method: "POST",
+        body: {
+          query: appendQuery.query,
+          count: appendQuery.count,
+          criteria: appendQuery.searchCriteria,
+          behavior: "append",
+        },
+      });
+    }
+  }
+
+  return websetId;
+}
+
+async function getWebsetStatus(websetId: string, apiKey: string): Promise<string> {
+  const webset = await exaFetch(`/websets/${websetId}`, apiKey);
+  return asString(webset.status) || "running";
+}
 
 // ---------------------------------------------------------------------------
 // Polling Helper
@@ -310,6 +370,40 @@ function mapItemToCandidate(item: WebsetItem): CandidateData {
   };
 }
 
+async function buildCandidatePayload(
+  websetId: string,
+  apiKey: string,
+): Promise<{
+  totalFound: number;
+  deduplicatedCount: number;
+  candidates: CandidateData[];
+}> {
+  const items = await retrieveAllItems(websetId, apiKey);
+  const allCandidates = items.map(mapItemToCandidate);
+
+  const seenUrls = new Set<string>();
+  const seenNameCompany = new Set<string>();
+  const candidates: CandidateData[] = [];
+
+  for (const candidate of allCandidates) {
+    const normalizedUrl = candidate.profileUrl.toLowerCase().replace(/\/+$/, "").replace(/\?.*$/, "");
+    if (seenUrls.has(normalizedUrl)) continue;
+    seenUrls.add(normalizedUrl);
+
+    const nameKey = `${candidate.name.toLowerCase().trim()}|||${(candidate.company || "").toLowerCase().trim()}`;
+    if (seenNameCompany.has(nameKey)) continue;
+    seenNameCompany.add(nameKey);
+
+    candidates.push(candidate);
+  }
+
+  return {
+    totalFound: candidates.length,
+    deduplicatedCount: allCandidates.length - candidates.length,
+    candidates,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main Handler
 // ---------------------------------------------------------------------------
@@ -325,6 +419,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   try {
     const body = (await request.json()) as SourceRequestBody;
+    const action = body.action ?? "sync";
     const count = Math.max(1, Math.min(body.count ?? 20, 50));
     const appendQueries = body.appendQueries !== false;
 
@@ -340,82 +435,57 @@ Deno.serve(async (request: Request): Promise<Response> => {
       );
     }
 
-    // 1. Create webset with first query
-    const queries = buildQueries(count);
-    const createPayload = {
-      search: {
-        query: queries.create.query,
-        count: queries.create.count,
-        criteria: queries.create.searchCriteria,
-      },
-      enrichments: ENRICHMENTS.map((e) => {
-        const col: Record<string, unknown> = {
-          description: e.description,
-          format: e.format,
-        };
-        if (e.options) col.options = e.options;
-        return col;
-      }),
-    };
+    if (action === "status") {
+      const websetId = (body.websetId || "").trim();
+      if (!websetId) {
+        return errorJson("Missing websetId", "missing_webset_id", 400);
+      }
 
-    const websetData = await exaFetch("/websets", apiKey, {
-      method: "POST",
-      body: createPayload,
-    });
-
-    const websetId = asString(websetData.id);
-    if (!websetId) {
-      throw new Error("Failed to create webset — no ID returned");
-    }
-
-    // 2. Append additional searches
-    if (appendQueries) {
-      for (const appendQuery of queries.appends) {
-        await exaFetch(`/websets/${websetId}/searches`, apiKey, {
-          method: "POST",
-          body: {
-            query: appendQuery.query,
-            count: appendQuery.count,
-            criteria: appendQuery.searchCriteria,
-            behavior: "append",
-          },
+      const websetStatus = await getWebsetStatus(websetId, apiKey);
+      if (websetStatus === "error" || websetStatus === "failed") {
+        return json({
+          status: "error",
+          websetId,
+          error: `Webset failed with status: ${websetStatus}`,
         });
       }
+
+      if (websetStatus !== "idle") {
+        return json({
+          status: "running",
+          websetId,
+        });
+      }
+
+      const payload = await buildCandidatePayload(websetId, apiKey);
+      return json({
+        status: "completed",
+        websetId,
+        totalFound: payload.totalFound,
+        deduplicatedCount: payload.deduplicatedCount,
+        candidates: payload.candidates,
+      });
     }
 
-    // 3. Poll until idle
+    const websetId = await createWebsetWithQueries(apiKey, count, appendQueries);
+
+    if (action === "start") {
+      return json({
+        status: "running",
+        websetId,
+      });
+    }
+
+    // Legacy synchronous mode for older clients that do not pass action.
     await pollUntilIdle(websetId, apiKey);
-
-    // 4. Retrieve all items
-    const items = await retrieveAllItems(websetId, apiKey);
-
-    // 5. Map to candidate shape
-    const allCandidates = items.map(mapItemToCandidate);
-
-    // 6. Deduplicate by normalized URL and by name+company
-    const seenUrls = new Set<string>();
-    const seenNameCompany = new Set<string>();
-    const candidates: CandidateData[] = [];
-
-    for (const c of allCandidates) {
-      const normUrl = c.profileUrl.toLowerCase().replace(/\/+$/, "").replace(/\?.*$/, "");
-      if (seenUrls.has(normUrl)) continue;
-      seenUrls.add(normUrl);
-
-      const nameKey = `${c.name.toLowerCase().trim()}|||${(c.company || "").toLowerCase().trim()}`;
-      if (seenNameCompany.has(nameKey)) continue;
-      seenNameCompany.add(nameKey);
-
-      candidates.push(c);
-    }
-
-    const deduplicatedCount = allCandidates.length - candidates.length;
+    const payload = await buildCandidatePayload(websetId, apiKey);
 
     return json({
+      status: "completed",
       websetId,
-      totalFound: candidates.length,
-      deduplicatedCount,
-      candidates,
+      totalFound: payload.totalFound,
+      deduplicatedCount: payload.deduplicatedCount,
+      candidates: payload.candidates,
     });
   } catch (error) {
     console.error("founder-source failed:", error);
